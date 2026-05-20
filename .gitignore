@@ -1,0 +1,20 @@
+node_modules
+dist
+*.log
+.eslintcache
+.DS_Store
+bun.lock
+
+temp/
+
+
+# START Ruler Generated Files
+/AGENTS.md
+/AGENTS.md.bak
+/packages/acp/AGENTS.md
+/packages/acp/AGENTS.md.bak
+/packages/oc-rewind/AGENTS.md
+/packages/oc-rewind/AGENTS.md.bak
+/packages/oc-todo/AGENTS.md
+/packages/oc-todo/AGENTS.md.bak
+# END Ruler Generated Files

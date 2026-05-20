@@ -1,0 +1,36 @@
+{
+  "name": "@touchtechclub/pi-oc-rewind",
+  "version": "0.1.0",
+  "description": "Pi coding-agent extension: per-message undo/redo with shadow-git snapshots. Opencode-inspired.",
+  "license": "MIT",
+  "author": "Sparsh Kaushik <github@sparshkaushik.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TouchTechClub/pi-toolkit.git",
+    "directory": "packages/oc-rewind"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/TouchTechClub/pi-toolkit/issues"
+  },
+  "homepage": "https://github.com/TouchTechClub/pi-toolkit/tree/main/packages/oc-rewind#readme",
+  "keywords": [
+    "pi-coding-agent",
+    "pi-extension",
+    "opencode",
+    "undo",
+    "redo",
+    "rewind",
+    "checkpoint",
+    "acp-compatible"
+  ],
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "LICENSE",
+    "README.md"
+  ]
+}

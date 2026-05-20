@@ -1,0 +1,9 @@
+# Ruler Configuration — pi-toolkit monorepo
+# See https://ai.intellectronica.net/ruler for documentation.
+
+default_agents = ["pi"]
+nested = true
+
+[gitignore]
+enabled = true
+local = false
