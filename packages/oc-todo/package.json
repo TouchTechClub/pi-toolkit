@@ -1,6 +1,6 @@
 {
   "name": "@touchtechclub/pi-oc-todo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi coding-agent extension: structured todo list tracking, ACP plan-compatible. Opencode-inspired.",
   "license": "MIT",
   "author": "Sparsh Kaushik <github@sparshkaushik.com>",
@@ -18,12 +18,16 @@
   "homepage": "https://github.com/TouchTechClub/pi-toolkit/tree/main/packages/oc-todo#readme",
   "keywords": [
     "pi-coding-agent",
+    "pi-package",
     "pi-extension",
     "opencode",
     "todo",
     "todowrite",
     "acp-plan"
   ],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
   "type": "module",
   "main": "index.ts",
   "files": [
