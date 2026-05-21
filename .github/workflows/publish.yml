@@ -2,7 +2,7 @@ name: Publish
 
 on:
   push:
-    branches: [main]
+    branches: [release]
 
 permissions:
   id-token: write
@@ -74,13 +74,13 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Build (pi-acp only)
-        if: steps.info.outputs.dir == 'packages/pi-acp'
-        run: bun run --cwd packages/pi-acp build
+      - name: Build (acp only)
+        if: steps.info.outputs.dir == 'packages/acp'
+        run: bun run --cwd packages/acp build
 
-      - name: Test (pi-acp only)
-        if: steps.info.outputs.dir == 'packages/pi-acp'
-        run: bun run --cwd packages/pi-acp test
+      - name: Test (acp only)
+        if: steps.info.outputs.dir == 'packages/acp'
+        run: bun run --cwd packages/acp test
 
       - name: Publish
         run: cd "${{ steps.info.outputs.dir }}" && bun publish --access public --provenance
