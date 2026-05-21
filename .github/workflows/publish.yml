@@ -80,7 +80,12 @@ jobs:
         run: bun run --cwd packages/acp test
 
       - name: Publish
-        run: cd "${{ steps.info.outputs.dir }}" && bun publish --access public --provenance
+        run: |
+          bun add -g npm@latest
+          cd "${{ steps.info.outputs.dir }}"
+          bun pm pack
+          TARBALL=$(ls *.tgz | head -1)
+          npm publish "$TARBALL" --access public --provenance
 
   release:
     needs: publish
