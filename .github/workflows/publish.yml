@@ -44,8 +44,7 @@ jobs:
             echo "No packages to publish."
             echo "packages=[]" >> "$GITHUB_OUTPUT"
           else
-            printf -v joined '%s,' "${PACKAGES[@]}"
-            echo "packages=[${joined%,}]" >> "$GITHUB_OUTPUT"
+            echo "packages=$(printf '%s\n' "${PACKAGES[@]}" | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
           fi
 
   publish:
