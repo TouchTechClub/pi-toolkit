@@ -1,0 +1,22 @@
+{
+  "packages": [
+    "../packages/oc-rewind",
+    "../packages/oc-todo",
+    {
+      "source": "npm:@juicesharp/rpiv-ask-user-question",
+      "extensions": []
+    },
+    {
+      "source": "npm:pi-web-access",
+      "extensions": []
+    },
+    {
+      "source": "npm:@touchtechclub/pi-oc-rewind",
+      "extensions": []
+    },
+    {
+      "source": "npm:@touchtechclub/pi-oc-todo",
+      "extensions": []
+    }
+  ]
+}

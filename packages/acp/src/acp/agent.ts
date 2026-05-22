@@ -983,10 +983,6 @@ export class PiAcpAgent implements ACPAgent {
       fileCommands,
     })
 
-    // Policy: within a single ACP connection (one Zed window), keep only one live pi subprocess.
-    // (Tests sometimes stub out `this.sessions`, so guard the call.)
-    ;(this.sessions as any).closeAllExcept?.(session.sessionId)
-
     // (Optional) ensure mapping stays fresh.
     this.store.upsert({
       sessionId: params.sessionId,
@@ -998,11 +994,37 @@ export class PiAcpAgent implements ACPAgent {
     const data = (await proc.getMessages()) as any
     const messages = Array.isArray(data?.messages) ? data.messages : []
 
+    // First pass: build a toolCallId → args map from assistant messages so
+    // we can populate tool titles during the toolResult replay pass.
+    const toolCallArgs = new Map<string, { toolName: string; args: unknown }>()
     for (const m of messages) {
-      const role = String(m?.role ?? '')
+      const role = String(m?.role ?? (m as any)?.message?.role ?? '')
+      if (role !== 'assistant') continue
+
+      const content = Array.isArray(m?.content)
+        ? m.content
+        : Array.isArray((m as any)?.message?.content)
+          ? (m as any).message.content
+          : []
+
+      for (const block of content) {
+        if (block?.type === 'toolCall' || block?.type === 'tool_use') {
+          const id = String(block?.id ?? '')
+          const name = String(block?.name ?? 'tool')
+          if (id) {
+            toolCallArgs.set(id, { toolName: name, args: block?.arguments ?? null })
+          }
+        }
+      }
+    }
+
+    for (const m of messages) {
+      // pi may nest role under `message` (JSONL format) or keep it at top level (RPC-normalized).
+      const role = String(m?.role ?? (m as any)?.message?.role ?? '')
 
       if (role === 'user') {
-        const text = normalizePiMessageText(m?.content)
+        const content = m?.content ?? (m as any)?.message?.content
+        const text = normalizePiMessageText(content)
         if (text) {
           await this.conn.sessionUpdate({
             sessionId: session.sessionId,
@@ -1015,7 +1037,8 @@ export class PiAcpAgent implements ACPAgent {
       }
 
       if (role === 'assistant') {
-        const text = normalizePiAssistantText(m?.content)
+        const content = m?.content ?? (m as any)?.message?.content
+        const text = normalizePiAssistantText(content)
         if (text) {
           await this.conn.sessionUpdate({
             sessionId: session.sessionId,
@@ -1028,9 +1051,15 @@ export class PiAcpAgent implements ACPAgent {
       }
 
       if (role === 'toolResult') {
-        const toolName = String((m as any)?.toolName ?? 'tool')
-        const toolCallId = String((m as any)?.toolCallId ?? crypto.randomUUID())
-        const isError = Boolean((m as any)?.isError)
+        // pi may nest fields under `message` (JSONL) or keep them at top level (RPC).
+        const inner = (m as any)?.message ?? m
+        const toolCallId = String(inner?.toolCallId ?? crypto.randomUUID())
+        const isError = Boolean(inner?.isError)
+
+        // Prefer the tool name + args from the original assistant tool call.
+        const tc = toolCallArgs.get(toolCallId)
+        const toolName = tc?.toolName ?? String(inner?.toolName ?? 'tool')
+        const rawInput = tc?.args ?? null
 
         // Create a synthetic ACP tool call to render historic tool usage.
         await this.conn.sessionUpdate({
@@ -1038,10 +1067,10 @@ export class PiAcpAgent implements ACPAgent {
           update: {
             sessionUpdate: 'tool_call',
             toolCallId,
-            title: toToolTitle(toolName, null),
+            title: toToolTitle(toolName, rawInput),
             kind: toToolKind(toolName),
             status: 'completed',
-            rawInput: null,
+            rawInput,
             rawOutput: m,
           },
         })

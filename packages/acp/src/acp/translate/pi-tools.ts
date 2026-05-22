@@ -6,10 +6,7 @@ export function toToolTitle(toolName: string, rawInput: unknown): string {
 
   if (toolName === 'bash') {
     const command = getBashCommand(args)
-    if (command) {
-      const title = `bash ${command}`
-      return title.length > 120 ? `${title.slice(0, 117)}...` : title
-    }
+    if (command) return command
   }
 
   const path = typeof args?.path === 'string' ? args.path.trim() : ''

@@ -28,7 +28,9 @@
     "acp-compatible"
   ],
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "type": "module",
   "main": "index.ts",

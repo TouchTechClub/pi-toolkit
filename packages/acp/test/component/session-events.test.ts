@@ -443,7 +443,7 @@ test('PiAcpSession: updates streamed bash tool title when execution args arrive'
   assert.equal(conn.updates[0]!.update.sessionUpdate, 'tool_call')
   assert.equal((conn.updates[0]!.update as any).title, 'bash')
   assert.equal(conn.updates[1]!.update.sessionUpdate, 'tool_call_update')
-  assert.equal((conn.updates[1]!.update as any).title, 'bash bun run build')
+  assert.equal((conn.updates[1]!.update as any).title, 'bun run build')
 })
 
 test('PiAcpSession: emits streamed tool locations from pi path args', async () => {

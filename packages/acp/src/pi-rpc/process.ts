@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import * as readline from 'node:readline'
 import { getPiCommand, shouldUseShellForPiCommand } from './command.js'
 
@@ -138,6 +138,16 @@ export class PiRpcProcess {
     // (e.g. MCP extensions, prompt templates for workflows).
     const args = ['--mode', 'rpc', '--no-themes']
     if (params.sessionPath) args.push('--session', params.sessionPath)
+
+    // Allow injecting extra pi CLI args via environment variable.
+    const extraArgs = process.env.PI_ACP_EXTRA_PI_ARGS
+    if (extraArgs) {
+      const parsed = extraArgs.match(/(?:'[^']*'|"[^"]*"|\S)+/g) ?? []
+      for (const a of parsed) {
+        const stripped = a.replace(/^(['"])(.*)\1$/, '$2')
+        args.push(stripped)
+      }
+    }
 
     const child = spawn(cmd, args, {
       cwd: params.cwd,
