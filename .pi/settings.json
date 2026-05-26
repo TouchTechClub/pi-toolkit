@@ -2,6 +2,7 @@
   "packages": [
     "../packages/oc-rewind",
     "../packages/oc-todo",
+    "../packages/oc-web-tools",
     {
       "source": "npm:@juicesharp/rpiv-ask-user-question",
       "extensions": []

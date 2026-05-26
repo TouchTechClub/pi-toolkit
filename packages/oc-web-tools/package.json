@@ -1,0 +1,44 @@
+{
+  "name": "@touchtechclub/pi-oc-web-tools",
+  "version": "0.1.1",
+  "description": "Pi coding-agent extension: web fetch and web search tools with MCP transport. Opencode-inspired.",
+  "license": "MIT",
+  "author": "Sparsh Kaushik <github@sparshkaushik.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TouchTechClub/pi-toolkit.git",
+    "directory": "packages/oc-web-tools"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/TouchTechClub/pi-toolkit/issues"
+  },
+  "homepage": "https://github.com/TouchTechClub/pi-toolkit/tree/main/packages/oc-web-tools#readme",
+  "keywords": [
+    "pi-coding-agent",
+    "pi-package",
+    "pi-extension",
+    "opencode",
+    "web",
+    "webfetch",
+    "websearch",
+    "mcp"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "turndown": "^7.2.0"
+  }
+}

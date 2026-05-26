@@ -1371,6 +1371,14 @@ function buildUpdateNotice(): string | null {
   }
 }
 
+/** Parse PI_ACP_EXTRA_PI_ARGS into an array of individual flags/values. */
+function parseExtraPiArgs(): string[] {
+  const raw = process.env.PI_ACP_EXTRA_PI_ARGS
+  if (!raw) return []
+  const parsed = raw.match(/(?:'[^']*'|"[^"]*"|\S)+/g) ?? []
+  return parsed.map((a) => a.replace(/^(['"])(.*)\1$/, '$2'))
+}
+
 function buildStartupInfo(opts: {
   cwd: string
   fileCommands: ReturnType<typeof loadSlashCommands>
@@ -1478,7 +1486,8 @@ function buildStartupInfo(opts: {
 
   // Prompts
   const promptsItems: string[] = []
-  const promptsDir = join(process.env.HOME ?? '', '.pi', 'agent', 'prompts')
+  const agentDir = getAgentDir()
+  const promptsDir = join(agentDir, 'prompts')
   try {
     const prompts = readdirSync(promptsDir).filter((f) => f.endsWith('.md'))
     for (const f of prompts) promptsItems.push(`/${basename(f, '.md')}`)
@@ -1489,30 +1498,61 @@ function buildStartupInfo(opts: {
 
   // Extensions
   const extItems: string[] = []
-  const extDir = join(process.env.HOME ?? '', '.pi', 'agent', 'extensions')
-  try {
-    const exts = readdirSync(extDir).filter((f) => f.endsWith('.ts') || f.endsWith('.js'))
-    for (const f of exts) extItems.push(join(extDir, f))
-  } catch {
-    // ignore
-  }
 
-  // Also show npm packages from pi settings (best-effort)
-  try {
-    const settingsPath = join(process.env.HOME ?? '', '.pi', 'agent', 'settings.json')
-    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8')) as any
-    const pkgs: string[] = Array.isArray(settings?.packages) ? settings.packages : []
-    for (const pkg of pkgs) {
-      const s = String(pkg)
-      if (s.startsWith('npm:')) {
-        // Render a two-line bullet structure using markdown indentation.
-        extItems.push(`${s}\n  - index.ts`)
+  // If pi is being launched with --no-extensions, only show explicit --extension flags
+  // from PI_ACP_EXTRA_PI_ARGS rather than guessing from settings files on disk.
+  const extraArgs = parseExtraPiArgs()
+  const noExtensions = extraArgs.includes('--no-extensions') || extraArgs.includes('-ne')
+
+  if (noExtensions) {
+    // Collect explicit --extension/-e paths. Each flag consumes the next arg as its value.
+    let i = 0
+    while (i < extraArgs.length) {
+      if (extraArgs[i] === '--extension' || extraArgs[i] === '-e') {
+        const path = extraArgs[i + 1]
+        if (path && !path.startsWith('-')) {
+          extItems.push(path)
+          i += 2 // skip the flag and its value
+        } else {
+          i++
+        }
       } else {
-        extItems.push(s)
+        i++
       }
     }
-  } catch {
-    // ignore
+  } else {
+    // Normal discovery: show extensions from disk and packages from settings.
+    const extDir = join(agentDir, 'extensions')
+    try {
+      const exts = readdirSync(extDir).filter((f) => f.endsWith('.ts') || f.endsWith('.js'))
+      for (const f of exts) extItems.push(join(extDir, f))
+    } catch {
+      // ignore
+    }
+
+    // Show packages from pi settings (global + project)
+    const seenPackages = new Set<string>()
+    for (const settingsPath of [
+      join(agentDir, 'settings.json'),
+      join(opts.cwd, '.pi', 'settings.json'),
+    ]) {
+      try {
+        const settings = JSON.parse(readFileSync(settingsPath, 'utf-8')) as any
+        const pkgs: string[] = Array.isArray(settings?.packages) ? settings.packages : []
+        for (const pkg of pkgs) {
+          const s = typeof pkg === 'string' ? pkg : String((pkg as any)?.source ?? pkg)
+          if (!s || seenPackages.has(s)) continue
+          seenPackages.add(s)
+          if (s.startsWith('npm:')) {
+            extItems.push(`${s}\n  - index.ts`)
+          } else {
+            extItems.push(s)
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
   }
 
   addSection('Extensions', extItems)
