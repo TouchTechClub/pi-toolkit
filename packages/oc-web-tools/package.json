@@ -1,6 +1,6 @@
 {
   "name": "@touchtechclub/pi-oc-web-tools",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Pi coding-agent extension: web fetch and web search tools with MCP transport. Opencode-inspired.",
   "license": "MIT",
   "author": "Sparsh Kaushik <github@sparshkaushik.com>",
