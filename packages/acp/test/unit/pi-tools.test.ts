@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { toolResultToText } from '../../src/acp/translate/pi-tools.js'
 
 test('toolResultToText: extracts text from content blocks', () => {

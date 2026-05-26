@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { isAbsolute, resolve as resolvePath } from 'node:path'
 import type {
   AgentSideConnection,
   ContentBlock,
@@ -7,14 +9,12 @@ import type {
   ToolCallLocation,
 } from '@agentclientprotocol/sdk'
 import { RequestError } from '@agentclientprotocol/sdk'
+import { type PiRpcEvent, PiRpcProcess, PiRpcSpawnError } from '../pi-rpc/process.js'
 import { maybeAuthRequiredError } from './auth-required.js'
-import { readFileSync } from 'node:fs'
-import { isAbsolute, resolve as resolvePath } from 'node:path'
-import { PiRpcProcess, PiRpcSpawnError, type PiRpcEvent } from '../pi-rpc/process.js'
 import { SessionStore } from './session-store.js'
-import { toolResultToText, toToolTitle, toToolKind } from './translate/pi-tools.js'
-import { todoToolResultToPlanUpdate } from './translate/pi-todos.js'
 import { expandSlashCommand, type FileSlashCommand } from './slash-commands.js'
+import { todoToolResultToPlanUpdate } from './translate/pi-todos.js'
+import { toolResultToText, toToolKind, toToolTitle } from './translate/pi-tools.js'
 
 type SessionCreateParams = {
   cwd: string

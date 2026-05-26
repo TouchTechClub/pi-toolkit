@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { getAuthMethods, PI_SETUP_METHOD_ID } from '../../src/acp/auth.js'
 
 test('getAuthMethods: includes Zed terminal-auth metadata when enabled', () => {

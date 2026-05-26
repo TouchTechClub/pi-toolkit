@@ -1,7 +1,7 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { PiAcpAgent } from '../../src/acp/agent.js'
-import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
+import { asAgentConn, FakeAgentSideConnection } from '../helpers/fakes.js'
 
 test('PiAcpAgent: newSession returns a helpful Internal error when pi is not installed', async () => {
   const prevPiCmd = process.env.PI_ACP_PI_COMMAND

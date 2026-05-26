@@ -1,11 +1,11 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import test from 'node:test'
 
 import { PiAcpAgent } from '../../src/acp/agent.js'
-import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
+import { asAgentConn, FakeAgentSideConnection } from '../helpers/fakes.js'
 
 test('PiAcpAgent: unstable_listSessions defaults to lastSessionCwd when cwd param is omitted', async () => {
   const root = mkdtempSync(join(tmpdir(), 'pi-acp-test-'))

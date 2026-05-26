@@ -1,11 +1,11 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import test from 'node:test'
 import { PiAcpAgent } from '../../src/acp/agent.js'
 import { SessionStore } from '../../src/acp/session-store.js'
-import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
+import { asAgentConn, FakeAgentSideConnection } from '../helpers/fakes.js'
 
 class FakeSessions {
   closeCalls: string[] = []

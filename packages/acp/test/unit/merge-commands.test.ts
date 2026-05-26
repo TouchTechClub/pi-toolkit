@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 
 // Minimal local impl (mirrors src/acp/agent.ts behavior)
 function mergeCommands(a: Array<{ name: string }>, b: Array<{ name: string }>) {

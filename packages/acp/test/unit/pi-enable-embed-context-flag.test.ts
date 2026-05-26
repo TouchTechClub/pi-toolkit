@@ -1,7 +1,7 @@
-import test, { afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import test, { afterEach, beforeEach } from 'node:test'
 import { PiAcpAgent } from '../../src/acp/agent.js'
-import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
+import { asAgentConn, FakeAgentSideConnection } from '../helpers/fakes.js'
 
 beforeEach(() => {
   delete process.env.PI_ACP_ENABLE_EMBEDDED_CONTEXT

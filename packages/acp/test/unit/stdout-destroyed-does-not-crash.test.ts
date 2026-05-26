@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 
 // This is a lightweight regression test: our stdout writer should not throw
 // if stdout is marked as destroyed.

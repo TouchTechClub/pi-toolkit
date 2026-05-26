@@ -1,8 +1,8 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import test from 'node:test'
 import { isAcpCompatible, toAvailableCommandsFromPiGetCommands } from '../../src/acp/pi-commands.js'
 
 test('toAvailableCommandsFromPiGetCommands: hides extension commands by default and filters skill commands', () => {

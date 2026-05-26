@@ -1,9 +1,14 @@
+import { spawnSync } from 'node:child_process'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join } from 'node:path'
+import type { AvailableCommand } from '@agentclientprotocol/sdk'
 import {
-  RequestError,
   type Agent as ACPAgent,
   type AgentSideConnection,
   type AuthenticateRequest,
   type CancelNotification,
+  type CloseSessionRequest,
+  type CloseSessionResponse,
   type InitializeRequest,
   type InitializeResponse,
   type ListSessionsRequest,
@@ -14,35 +19,29 @@ import {
   type NewSessionRequest,
   type PromptRequest,
   type PromptResponse,
-  type CloseSessionRequest,
-  type CloseSessionResponse,
+  RequestError,
   type SessionInfo,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
   type StopReason,
 } from '@agentclientprotocol/sdk'
-import { getAuthMethods } from './auth.js'
-import { SessionManager } from './session.js'
-import { SessionStore } from './session-store.js'
 import { PiRpcProcess } from '../pi-rpc/process.js'
-import { listPiSessions, findPiSessionFile } from './pi-sessions.js'
-import { normalizePiAssistantText, normalizePiMessageText } from './translate/pi-messages.js'
-import { toolResultToText, toToolTitle, toToolKind } from './translate/pi-tools.js'
-import { todoToolResultToPlanUpdate } from './translate/pi-todos.js'
-import { promptToPiMessage } from './translate/prompt.js'
-import { loadSlashCommands, parseCommandArgs, toAvailableCommands } from './slash-commands.js'
-import { getAgentDir, getEnableSkillCommands, getQuietStartup } from './pi-settings.js'
+import { getAuthMethods } from './auth.js'
+import { maybeAuthRequiredError } from './auth-required.js'
 import {
   isAcpCompatible,
-  toAvailableCommandsFromPiGetCommands,
   type PiRpcCommandInfo,
+  toAvailableCommandsFromPiGetCommands,
 } from './pi-commands.js'
-import { maybeAuthRequiredError } from './auth-required.js'
-import { isAbsolute } from 'node:path'
-import { existsSync, readFileSync, realpathSync, readdirSync, statSync, unlinkSync } from 'node:fs'
-import type { AvailableCommand } from '@agentclientprotocol/sdk'
-import { join, dirname, basename } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { findPiSessionFile, listPiSessions } from './pi-sessions.js'
+import { getAgentDir, getEnableSkillCommands, getQuietStartup } from './pi-settings.js'
+import { SessionManager } from './session.js'
+import { SessionStore } from './session-store.js'
+import { loadSlashCommands, parseCommandArgs, toAvailableCommands } from './slash-commands.js'
+import { normalizePiAssistantText, normalizePiMessageText } from './translate/pi-messages.js'
+import { todoToolResultToPlanUpdate } from './translate/pi-todos.js'
+import { toolResultToText, toToolKind, toToolTitle } from './translate/pi-tools.js'
+import { promptToPiMessage } from './translate/prompt.js'
 
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
@@ -103,6 +102,7 @@ function mergeCommands(a: AvailableCommand[], b: AvailableCommand[]): AvailableC
 
   return out
 }
+
 import { fileURLToPath } from 'node:url'
 
 const pkg = readNearestPackageJson(import.meta.url)

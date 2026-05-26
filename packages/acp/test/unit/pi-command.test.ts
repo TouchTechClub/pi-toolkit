@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { defaultPiCommand, shouldUseShellForPiCommand } from '../../src/pi-rpc/command.js'
 
 test('defaultPiCommand: uses pi.cmd on Windows and pi elsewhere', () => {

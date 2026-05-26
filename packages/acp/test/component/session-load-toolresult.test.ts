@@ -1,9 +1,9 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 
 import { PiAcpAgent } from '../../src/acp/agent.js'
-import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
 import { PiRpcProcess } from '../../src/pi-rpc/process.js'
+import { asAgentConn, FakeAgentSideConnection } from '../helpers/fakes.js'
 
 class FakeStore {
   get(_sessionId: string) {

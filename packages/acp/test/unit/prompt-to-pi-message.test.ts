@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { promptToPiMessage } from '../../src/acp/translate/prompt.js'
 
 test('promptToPiMessage: concatenates text and resource links', () => {

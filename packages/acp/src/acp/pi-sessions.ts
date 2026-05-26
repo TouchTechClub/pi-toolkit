@@ -1,14 +1,14 @@
 import {
-  readdirSync,
-  readFileSync,
-  statSync,
-  openSync,
-  readSync,
   closeSync,
   existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  statSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve, isAbsolute } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 
 export type PiSessionListItem = {
   sessionId: string

@@ -1,13 +1,14 @@
 // @pi-acp-compatible
+
+import { createHash } from 'node:crypto'
+import { mkdir, rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import path from 'node:path'
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   SessionEntry,
 } from '@earendil-works/pi-coding-agent'
-import { mkdir, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import path from 'node:path'
-import { createHash } from 'node:crypto'
 
 const EXT = 'checkpoint-undo-redo'
 const GIT_TIMEOUT = 30_000
