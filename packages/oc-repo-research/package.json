@@ -1,0 +1,41 @@
+{
+  "name": "@touchtechclub/pi-oc-repo-research",
+  "version": "0.1.0",
+  "description": "Pi coding-agent extension: git repository cloning and overview tools. Opencode-inspired.",
+  "license": "MIT",
+  "author": "Sparsh Kaushik <github@sparshkaushik.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TouchTechClub/pi-toolkit.git",
+    "directory": "packages/oc-repo-research"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/TouchTechClub/pi-toolkit/issues"
+  },
+  "homepage": "https://github.com/TouchTechClub/pi-toolkit/tree/main/packages/oc-repo-research#readme",
+  "keywords": [
+    "pi-coding-agent",
+    "pi-package",
+    "pi-extension",
+    "opencode",
+    "git",
+    "repo",
+    "clone",
+    "research"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "LICENSE",
+    "README.md"
+  ]
+}

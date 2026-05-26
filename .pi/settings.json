@@ -1,6 +1,7 @@
 {
   "packages": [
     "../packages/oc-rewind",
+    "../packages/oc-repo-research",
     "../packages/oc-todo",
     "../packages/oc-web-tools",
     {
@@ -8,7 +9,7 @@
       "extensions": []
     },
     {
-      "source": "npm:pi-web-access",
+      "source": "npm:@touchtechclub/pi-oc-web-tools",
       "extensions": []
     },
     {
