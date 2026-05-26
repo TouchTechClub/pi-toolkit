@@ -10,6 +10,7 @@
     "test": "bun run --cwd packages/acp test",
     "format": "biome format --write .",
     "lint": "biome lint .",
+    "check": "biome check .",
     "ruler:apply": "ruler apply --nested",
     "ruler:revert": "ruler revert"
   },
