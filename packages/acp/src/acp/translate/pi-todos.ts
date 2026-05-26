@@ -1,6 +1,6 @@
 import type { PlanEntry, SessionUpdate } from '@agentclientprotocol/sdk'
 
-const TODO_TOOL_NAMES = new Set(['todowrite', 'todo', 'TodoWrite'])
+const TODO_TOOL_NAMES = new Set(['todowrite', 'patchtodo', 'todo', 'TodoWrite'])
 
 export function todoToolResultToPlanUpdate(
   toolName: string,

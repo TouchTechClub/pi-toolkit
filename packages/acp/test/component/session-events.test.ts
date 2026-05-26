@@ -1,10 +1,10 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import test from 'node:test'
 import { PiAcpSession } from '../../src/acp/session.js'
-import { FakeAgentSideConnection, FakePiRpcProcess, asAgentConn } from '../helpers/fakes.js'
+import { asAgentConn, FakeAgentSideConnection, FakePiRpcProcess } from '../helpers/fakes.js'
 
 test('PiAcpSession: emits agent_message_chunk for text_delta', async () => {
   const conn = new FakeAgentSideConnection()
@@ -100,7 +100,7 @@ test('PiAcpSession: emits tool_call + tool_call_update + completes', async () =>
   assert.equal(conn.updates[0]!.update.sessionUpdate, 'tool_call')
   assert.equal((conn.updates[0]!.update as any).toolCallId, 't1')
   assert.equal((conn.updates[0]!.update as any).status, 'in_progress')
-  assert.equal((conn.updates[0]!.update as any).title, 'bash ls')
+  assert.equal((conn.updates[0]!.update as any).title, 'ls')
   assert.equal((conn.updates[0]!.update as any).locations, undefined)
 
   assert.equal(conn.updates[1]!.update.sessionUpdate, 'tool_call_update')
