@@ -12,10 +12,12 @@
     "lint": "biome lint .",
     "check": "biome check .",
     "ruler:apply": "ruler apply --nested",
-    "ruler:revert": "ruler revert"
+    "ruler:revert": "ruler revert",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
-    "@intellectronica/ruler": "^0.3.41"
+    "@intellectronica/ruler": "^0.3.41",
+    "husky": "^9.1.7"
   }
 }

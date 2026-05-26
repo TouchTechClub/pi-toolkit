@@ -1,0 +1,3 @@
+biome check --write .
+git add -A
+bun run check
