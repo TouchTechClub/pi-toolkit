@@ -7,6 +7,13 @@ export type PiRpcCommandInfo = {
   source?: unknown
   location?: unknown
   path?: unknown
+  sourceInfo?: {
+    path?: unknown
+    source?: unknown
+    scope?: unknown
+    origin?: unknown
+    baseDir?: unknown
+  }
 }
 
 function describeFallback(c: PiRpcCommandInfo): string {
@@ -43,7 +50,10 @@ export function isAcpCompatible(c: PiRpcCommandInfo): boolean {
   const source = typeof c?.source === 'string' ? c.source : ''
   if (source !== 'extension') return true
 
-  const path = typeof c.path === 'string' ? c.path.trim() : ''
+  // pi reports the extension file path in sourceInfo.path (or path as a fallback)
+  const path =
+    (typeof c.sourceInfo?.path === 'string' ? c.sourceInfo.path.trim() : '') ||
+    (typeof c.path === 'string' ? c.path.trim() : '')
   return Boolean(path && fileDeclaresAcpCompatibility(path))
 }
 

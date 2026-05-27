@@ -5,7 +5,7 @@
     "../packages/oc-todo",
     "../packages/oc-web-tools",
     {
-      "source": "npm:@juicesharp/rpiv-ask-user-question",
+      "source": "npm:@touchtechclub/pi-oc-repo-research",
       "extensions": []
     },
     {
