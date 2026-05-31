@@ -48,7 +48,7 @@ function parallelAuthHeaders(): Record<string, string> {
     'User-Agent': `pi-oc-web-tools/0.1.0`,
   }
   if (process.env.PARALLEL_API_KEY) {
-    headers['Authorization'] = `Bearer ${process.env.PARALLEL_API_KEY}`
+    headers.Authorization = `Bearer ${process.env.PARALLEL_API_KEY}`
   }
   return headers
 }
@@ -396,7 +396,7 @@ export default function webTools(pi: ExtensionAPI) {
 
         // Check content length
         const contentLength = finalResponse.headers.get('content-length')
-        if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
+        if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
           return {
             content: [
               {
@@ -457,7 +457,6 @@ export default function webTools(pi: ExtensionAPI) {
               output = content
             }
             break
-          case 'html':
           default:
             output = content
             break

@@ -1067,7 +1067,7 @@ export class PiAcpAgent implements ACPAgent {
           update: {
             sessionUpdate: 'tool_call',
             toolCallId,
-            title: toToolTitle(toolName, rawInput),
+            title: toToolTitle(toolName, rawInput, params.cwd),
             kind: toToolKind(toolName),
             status: 'completed',
             rawInput,

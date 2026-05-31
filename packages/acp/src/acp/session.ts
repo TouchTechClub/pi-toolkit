@@ -460,7 +460,7 @@ export class PiAcpSession {
               this.emit({
                 sessionUpdate: 'tool_call',
                 toolCallId,
-                title: toToolTitle(toolName, rawInput),
+                title: toToolTitle(toolName, rawInput, this.cwd),
                 kind: toToolKind(toolName),
                 status,
                 locations,
@@ -472,7 +472,7 @@ export class PiAcpSession {
               this.emit({
                 sessionUpdate: 'tool_call_update',
                 toolCallId,
-                title: toToolTitle(toolName, rawInput),
+                title: toToolTitle(toolName, rawInput, this.cwd),
                 status,
                 locations,
                 rawInput,
@@ -518,7 +518,7 @@ export class PiAcpSession {
           this.emit({
             sessionUpdate: 'tool_call',
             toolCallId,
-            title: toToolTitle(toolName, args),
+            title: toToolTitle(toolName, args, this.cwd),
             kind: toToolKind(toolName),
             status: 'in_progress',
             locations,
@@ -529,7 +529,7 @@ export class PiAcpSession {
           this.emit({
             sessionUpdate: 'tool_call_update',
             toolCallId,
-            title: toToolTitle(toolName, args),
+            title: toToolTitle(toolName, args, this.cwd),
             status: 'in_progress',
             locations,
             rawInput: args,

@@ -1,6 +1,33 @@
+import { homedir } from 'node:os'
+import { isAbsolute, relative } from 'node:path'
 import type { ToolKind } from '@agentclientprotocol/sdk'
 
-export function toToolTitle(toolName: string, rawInput: unknown): string {
+/**
+ * Normalize a file path for display:
+ * - Inside cwd → relative path
+ * - Inside $HOME → ~/... shorthand
+ * - Otherwise → absolute as-is
+ */
+export function normalizeDisplayPath(path: string, cwd: string): string {
+  // Resolve relative paths first so we can reason about absolutes
+  const abs = (isAbsolute(path) ? path : `${cwd.replace(/\/+$/, '')}/${path}`).replace(/\/+$/, '')
+  const cwdBase = cwd.replace(/\/+$/, '')
+  const home = homedir().replace(/\/+$/, '')
+
+  // Inside cwd → relative
+  if (abs.startsWith(cwdBase + '/') || abs === cwdBase) {
+    return abs === cwdBase ? '.' : relative(cwdBase, abs)
+  }
+
+  // Inside home → ~ shorthand
+  if (abs.startsWith(home + '/') || abs === home) {
+    return abs === home ? '~' : `~/${relative(home, abs)}`
+  }
+
+  return abs
+}
+
+export function toToolTitle(toolName: string, rawInput: unknown, cwd?: string): string {
   const args =
     rawInput && typeof rawInput === 'object' ? (rawInput as Record<string, unknown>) : null
 
@@ -10,8 +37,10 @@ export function toToolTitle(toolName: string, rawInput: unknown): string {
   }
 
   const path = typeof args?.path === 'string' ? args.path.trim() : ''
-  if (path && (toolName === 'read' || toolName === 'write' || toolName === 'edit'))
-    return `${toolName} ${path}`
+  if (path && (toolName === 'read' || toolName === 'write' || toolName === 'edit')) {
+    const displayPath = cwd ? normalizeDisplayPath(path, cwd) : path
+    return `${toolName} ${displayPath}`
+  }
 
   return toolName
 }
