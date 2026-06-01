@@ -201,10 +201,19 @@ export default function checkpointUndoRedo(pi: ExtensionAPI) {
       return
     }
 
+    // Only include checkpoints on the current active branch path
+    const branchUserIds = new Set(
+      ctx.sessionManager
+        .getBranch()
+        .filter((e) => e.type === 'message' && e.message.role === 'user')
+        .map((e) => e.id),
+    )
+
     const snap = getSnapshotter(ctx)
     const aggregated = new Map<string, { added: number; removed: number }>()
 
     for (const checkpoint of checkpoints.values()) {
+      if (!branchUserIds.has(checkpoint.userEntryId)) continue
       try {
         const stats = await snap.diffNumstat(checkpoint.beforeSnapshot, checkpoint.afterSnapshot)
         for (const [file, { added, removed }] of stats) {
