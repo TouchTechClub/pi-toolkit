@@ -115,6 +115,11 @@ export default function checkpointUndoRedo(pi: ExtensionAPI) {
   registerUndoCommand('checkpoint-undo', 'Alias for /undo')
   registerRedoCommand('checkpoint-redo', 'Alias for /redo')
 
+  pi.registerCommand('diff', {
+    description: 'Show diff stats (lines added/removed) for each file changed in current session',
+    handler: async (_args, ctx) => diff(ctx),
+  })
+
   function registerUndoCommand(name: string, description: string) {
     pi.registerCommand(name, {
       description,
@@ -188,6 +193,62 @@ export default function checkpointUndoRedo(pi: ExtensionAPI) {
     }
   }
 
+  async function diff(ctx: ExtensionCommandContext) {
+    await ctx.waitForIdle()
+
+    if (checkpoints.size === 0) {
+      ctx.ui.notify('No checkpoints in current session', 'info')
+      return
+    }
+
+    const snap = getSnapshotter(ctx)
+    const aggregated = new Map<string, { added: number; removed: number }>()
+
+    for (const checkpoint of checkpoints.values()) {
+      try {
+        const stats = await snap.diffNumstat(checkpoint.beforeSnapshot, checkpoint.afterSnapshot)
+        for (const [file, { added, removed }] of stats) {
+          const existing = aggregated.get(file)
+          if (existing) {
+            existing.added += added
+            existing.removed += removed
+          } else {
+            aggregated.set(file, { added, removed })
+          }
+        }
+      } catch (error) {
+        ctx.ui.notify(`Skipping checkpoint: ${message(error)}`, 'warning')
+      }
+    }
+
+    if (aggregated.size === 0) {
+      ctx.ui.notify('No file changes across checkpoints', 'info')
+      return
+    }
+
+    // Sort by total changes descending
+    const sorted = [...aggregated.entries()].sort(
+      (a, b) => b[1].added + b[1].removed - (a[1].added + a[1].removed),
+    )
+
+    const t = ctx.ui.theme
+    let totalAdded = 0
+    let totalRemoved = 0
+
+    let output = `${t.bold('Session Diff')}\n\n`
+
+    for (const [file, { added, removed }] of sorted) {
+      totalAdded += added
+      totalRemoved += removed
+      output += `${t.fg('text', file)}  ${t.fg('toolDiffAdded', `+${added}`)}/${t.fg('toolDiffRemoved', `-${removed}`)}\n`
+    }
+
+    output += `\n${t.fg('dim', 'Total')}\n`
+    output += `${t.fg('toolDiffAdded', `+${totalAdded}`)}/${t.fg('toolDiffRemoved', `-${totalRemoved}`)} across ${t.bold(String(sorted.length))} file(s)`
+
+    ctx.ui.notify(output, 'info')
+  }
+
   function getSnapshotter(ctx: { cwd: string; sessionManager: { getSessionId(): string } }) {
     if (!snapshotter) snapshotter = new ShadowGit(pi, ctx.cwd, ctx.sessionManager.getSessionId())
     return snapshotter
@@ -223,6 +284,27 @@ class ShadowGit {
         .map((line) => line.trim())
         .filter(Boolean),
     )
+  }
+
+  async diffNumstat(
+    from: string,
+    to: string,
+  ): Promise<Map<string, { added: number; removed: number }>> {
+    await this.ensure()
+    const result = await this.git(['diff', '--numstat', '--no-renames', from, to, '--', '.'])
+    const stats = new Map<string, { added: number; removed: number }>()
+    for (const line of result.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)) {
+      const parts = line.split('\t')
+      if (parts.length < 3) continue
+      const added = Number.parseInt(parts[0], 10)
+      const removed = Number.parseInt(parts[1], 10)
+      if (Number.isNaN(added) || Number.isNaN(removed)) continue
+      stats.set(parts[2], { added, removed })
+    }
+    return stats
   }
 
   async restoreFiles(snapshot: string, files: string[]): Promise<void> {
