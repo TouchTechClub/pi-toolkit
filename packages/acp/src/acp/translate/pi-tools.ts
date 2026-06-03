@@ -39,10 +39,35 @@ export function toToolTitle(toolName: string, rawInput: unknown, cwd?: string): 
   const path = typeof args?.path === 'string' ? args.path.trim() : ''
   if (path && (toolName === 'read' || toolName === 'write' || toolName === 'edit')) {
     const displayPath = cwd ? normalizeDisplayPath(path, cwd) : path
-    return `${toolName} ${displayPath}`
+    const lineRange = toolName === 'read' ? formatReadLineRange(args) : ''
+    return `${toolName} ${displayPath}${lineRange}`
   }
 
   return toolName
+}
+
+function formatReadLineRange(args: Record<string, unknown> | null): string {
+  if (!args) return ''
+
+  const offset =
+    typeof args.offset === 'number' ? args.offset : Number.parseInt(String(args.offset ?? ''), 10)
+  const limit =
+    typeof args.limit === 'number' ? args.limit : Number.parseInt(String(args.limit ?? ''), 10)
+
+  if (!Number.isFinite(offset) && !Number.isFinite(limit)) return ''
+
+  const start = Number.isFinite(offset) ? offset : 1
+
+  if (Number.isFinite(limit) && limit > 0) {
+    const end = start + limit - 1
+    return start === end ? ` (line ${start})` : ` (${start}-${end} lines)`
+  }
+
+  if (Number.isFinite(offset) && offset > 1) {
+    return ` (from line ${offset})`
+  }
+
+  return ''
 }
 
 export function getBashCommand(args: Record<string, unknown> | null): string {

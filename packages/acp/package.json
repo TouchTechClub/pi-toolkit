@@ -1,6 +1,6 @@
 {
   "name": "@touchtechclub/pi-acp",
-  "version": "0.0.36",
+  "version": "0.0.37",
   "description": "ACP adapter for pi coding agent; maintained clone of svkozak/pi-acp",
   "license": "MIT",
   "author": "Sparsh Kaushik <github@sparshkaushik.com>",
