@@ -207,7 +207,6 @@ export class PiAcpSession {
 
   // pi can emit multiple `turn_end` events for a single user prompt (e.g. after tool_use).
   // The overall agent loop completes when `agent_end` is emitted.
-  private inAgentLoop = false
 
   // For ACP diff support: capture file contents before edits, then emit ToolCallContent {type:"diff"}.
   // This is due to pi sending diff as a string as opposed to ACP expected diff format.
@@ -356,7 +355,6 @@ export class PiAcpSession {
 
   private startTurn(t: QueuedTurn): void {
     this.cancelRequested = false
-    this.inAgentLoop = false
 
     this.pendingTurn = { resolve: t.resolve, reject: t.reject }
 
@@ -383,7 +381,6 @@ export class PiAcpSession {
         }
 
         this.pendingTurn = null
-        this.inAgentLoop = false
 
         // If the prompt failed, do not automatically proceed—pi may be unhealthy.
         // But we still clear the queueDepth metadata.
@@ -658,7 +655,8 @@ export class PiAcpSession {
       }
 
       case 'agent_start': {
-        this.inAgentLoop = true
+        // pi has started the overall agent loop. Completion is signalled by `agent_end`;
+        // intermediate `turn_end` events are sub-steps and must not resolve the prompt.
         break
       }
 
@@ -675,7 +673,6 @@ export class PiAcpSession {
           const reason: StopReason = this.cancelRequested ? 'cancelled' : 'end_turn'
           this.pendingTurn?.resolve(reason)
           this.pendingTurn = null
-          this.inAgentLoop = false
 
           // Start next queued prompt, if any.
           const next = this.turnQueue.shift()

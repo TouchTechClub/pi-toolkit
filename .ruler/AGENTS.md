@@ -25,7 +25,7 @@ bun run lint         # biome lint .
 
 ## Publishing
 
-Push to `main` with a version bump in a package's `package.json`. The GitHub workflow auto-publishes changed packages.
+Push to the `release` branch with a version bump in a package's `package.json`. The GitHub workflow auto-publishes changed packages.
 
 ## Ruler
 

@@ -1,11 +1,12 @@
 // @pi-acp-compatible
 
 import { execFile } from 'node:child_process'
+import type { Dirent } from 'node:fs'
 import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
+import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 
 const execFileAsync = promisify(execFile)
@@ -153,14 +154,6 @@ async function gitText(args: string[], cwd: string): Promise<string> {
   return result.code === 0 ? result.stdout.trim() : ''
 }
 
-async function gitLines(args: string[], cwd: string): Promise<string[]> {
-  const text = await gitText(args, cwd)
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-}
-
 // ---------------------------------------------------------------------------
 // Repository reference parser (ported from opencode util/repository.ts)
 // ---------------------------------------------------------------------------
@@ -233,7 +226,7 @@ function buildRemoteReference(input: {
   }
 }
 
-function parseRepositoryReference(input: string): RemoteReference | null {
+export function parseRepositoryReference(input: string): RemoteReference | null {
   const cleaned = normalizeRepositoryInput(input)
   if (!cleaned) return null
 
@@ -290,7 +283,7 @@ function parseRemoteReference(repository: string): RemoteReference {
   return reference
 }
 
-function validateBranch(branch: string): void {
+export function validateBranch(branch: string): void {
   if (!/^[A-Za-z0-9/_.-]+$/.test(branch) || branch.startsWith('-') || branch.includes('..')) {
     throw new Error(
       'Branch must contain only alphanumeric characters, /, _, ., and -, and cannot start with - or contain ..',
@@ -304,6 +297,100 @@ function repositoryCachePath(ref: RemoteReference): string {
 
 function sameRepositoryReference(left: RemoteReference, right: RemoteReference): boolean {
   return `${left.host}/${left.path}` === `${right.host}/${right.path}`
+}
+
+// ---------------------------------------------------------------------------
+// Cache usage / cleanup
+// ---------------------------------------------------------------------------
+
+export interface CacheEntry {
+  /** Human-readable label (host/path for repos). */
+  label: string
+  /** Absolute path on disk. */
+  path: string
+  /** Total size in bytes. */
+  bytes: number
+}
+
+/** Format a byte count as a short human-readable string (e.g. "1.4 MB"). */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** exp
+  const formatted = exp === 0 ? String(Math.round(value)) : value.toFixed(value >= 100 ? 0 : 1)
+  return `${formatted} ${units[exp]}`
+}
+
+/**
+ * Render a usage summary: each entry largest-first, plus a total line.
+ * Pure (no theme, no I/O) so it can be unit-tested.
+ */
+export function summarizeUsage(entries: CacheEntry[], noun = 'item', plural = `${noun}s`): string {
+  if (entries.length === 0) return `No cached ${plural} found.`
+  const sorted = [...entries].sort((a, b) => b.bytes - a.bytes)
+  const total = sorted.reduce((sum, e) => sum + e.bytes, 0)
+  const width = Math.max(...sorted.map((e) => formatBytes(e.bytes).length))
+  const lines = sorted.map((e) => `  ${formatBytes(e.bytes).padStart(width)}  ${e.label}`)
+  const count = `${sorted.length} ${sorted.length === 1 ? noun : plural}`
+  return [...lines, '', `  ${formatBytes(total).padStart(width)}  total across ${count}`].join('\n')
+}
+
+/** Recursively sum the size of all regular files under a directory. */
+async function measureDir(dir: string): Promise<number> {
+  let total = 0
+  let entries: Dirent[]
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      total += await measureDir(full)
+    } else if (entry.isFile()) {
+      total += await stat(full)
+        .then((s) => s.size)
+        .catch(() => 0)
+    }
+  }
+  return total
+}
+
+/**
+ * List every cached repository under REPOS_DIR with its on-disk size.
+ * Repos are stored as <host>/<path...>, so we walk to the first directory
+ * that contains a `.git` entry and treat the relative path as the label.
+ */
+async function listCachedRepos(): Promise<CacheEntry[]> {
+  const results: CacheEntry[] = []
+
+  async function walk(dir: string, segments: string[]): Promise<void> {
+    let entries: Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    const isRepo = entries.some((e) => e.name === '.git')
+    if (isRepo) {
+      results.push({
+        label: segments.join('/'),
+        path: dir,
+        bytes: await measureDir(dir),
+      })
+      return
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        await walk(path.join(dir, entry.name), [...segments, entry.name])
+      }
+    }
+  }
+
+  await walk(REPOS_DIR, [])
+  return results
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +531,7 @@ async function cloneOrRefresh(
 // Repository overview
 // ---------------------------------------------------------------------------
 
-function detectPackageManager(files: Set<string>): string | undefined {
+export function detectPackageManager(files: Set<string>): string | undefined {
   if (files.has('bun.lock') || files.has('bun.lockb')) return 'bun'
   if (files.has('pnpm-lock.yaml')) return 'pnpm'
   if (files.has('yarn.lock')) return 'yarn'
@@ -452,7 +539,7 @@ function detectPackageManager(files: Set<string>): string | undefined {
   return undefined
 }
 
-function detectEcosystems(files: Set<string>): string[] {
+export function detectEcosystems(files: Set<string>): string[] {
   const ecosystems: string[] = []
   if (files.has('package.json')) ecosystems.push('Node.js')
   if (files.has('pyproject.toml') || files.has('requirements.txt')) ecosystems.push('Python')
@@ -815,4 +902,72 @@ export default function repoResearch(pi: ExtensionAPI) {
       }
     },
   })
+
+  // -----------------------------------------------------------------------
+  // /repos command — show cache usage and clean up cached repositories
+  // -----------------------------------------------------------------------
+
+  pi.registerCommand('repos', {
+    description: 'Show disk usage of cached repositories and optionally delete them',
+    handler: async (_args, ctx) => manageRepoCache(ctx),
+  })
+}
+
+async function manageRepoCache(ctx: ExtensionCommandContext) {
+  if (!ctx.hasUI) return
+
+  ctx.ui.setStatus('repo', 'Listing cached repositories…')
+  const repos = await listCachedRepos()
+  ctx.ui.setStatus('repo', undefined)
+  if (repos.length === 0) {
+    ctx.ui.notify('No cached repositories found.', 'info')
+    return
+  }
+
+  ctx.ui.notify(summarizeUsage(repos, 'repository', 'repositories'), 'info')
+
+  const DELETE_ONE = 'Delete a repository…'
+  const DELETE_ALL = 'Delete ALL cached repositories'
+  const CANCEL = 'Cancel'
+  const choice = await ctx.ui.select('Repository cache', [DELETE_ONE, DELETE_ALL, CANCEL])
+
+  if (!choice || choice === CANCEL) return
+
+  if (choice === DELETE_ALL) {
+    const total = repos.reduce((sum, r) => sum + r.bytes, 0)
+    const ok = await ctx.ui.confirm(
+      'Delete all cached repositories?',
+      `This permanently removes ${repos.length} repo(s) freeing ${formatBytes(total)}. They can be re-cloned later.`,
+    )
+    if (!ok) return
+    let freed = 0
+    ctx.ui.setStatus('repo', `Deleting ${repos.length} repository cache(s)…`)
+    for (const repo of repos) {
+      await rm(repo.path, { recursive: true, force: true }).catch(() => {})
+      freed += repo.bytes
+    }
+    ctx.ui.setStatus('repo', undefined)
+    ctx.ui.notify(
+      `Deleted ${repos.length} repository cache(s); freed ${formatBytes(freed)}.`,
+      'info',
+    )
+    return
+  }
+
+  // Delete a single repository
+  const sorted = [...repos].sort((a, b) => b.bytes - a.bytes)
+  const labels = sorted.map((r) => `${r.label} (${formatBytes(r.bytes)})`)
+  const pick = await ctx.ui.select('Delete which repository?', [...labels, CANCEL])
+  if (!pick || pick === CANCEL) return
+  const target = sorted[labels.indexOf(pick)]
+  if (!target) return
+  const ok = await ctx.ui.confirm(
+    `Delete ${target.label}?`,
+    `This permanently removes the cached clone freeing ${formatBytes(target.bytes)}. It can be re-cloned later.`,
+  )
+  if (!ok) return
+  ctx.ui.setStatus('repo', `Deleting ${target.label}…`)
+  await rm(target.path, { recursive: true, force: true }).catch(() => {})
+  ctx.ui.setStatus('repo', undefined)
+  ctx.ui.notify(`Deleted ${target.label}; freed ${formatBytes(target.bytes)}.`, 'info')
 }

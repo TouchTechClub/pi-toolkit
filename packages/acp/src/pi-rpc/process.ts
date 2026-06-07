@@ -1,6 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import * as readline from 'node:readline'
 import { getPiCommand, shouldUseShellForPiCommand } from './command.js'
+import { type PiCompactResult, parsePiCompactResult, parsePiExportHtml } from './schemas.js'
 
 export class PiRpcSpawnError extends Error {
   /** Underlying spawn error code, e.g. ENOENT, EACCES */
@@ -296,10 +297,10 @@ export class PiRpcProcess {
       throw new Error(`pi set_steering_mode failed: ${res.error ?? JSON.stringify(res.data)}`)
   }
 
-  async compact(customInstructions?: string): Promise<unknown> {
+  async compact(customInstructions?: string): Promise<PiCompactResult> {
     const res = await this.request({ type: 'compact', customInstructions })
     if (!res.success) throw new Error(`pi compact failed: ${res.error ?? JSON.stringify(res.data)}`)
-    return res.data
+    return parsePiCompactResult(res.data)
   }
 
   async setAutoCompaction(enabled: boolean): Promise<void> {
@@ -325,8 +326,7 @@ export class PiRpcProcess {
     const res = await this.request({ type: 'export_html', outputPath })
     if (!res.success)
       throw new Error(`pi export_html failed: ${res.error ?? JSON.stringify(res.data)}`)
-    const data: any = res.data
-    return { path: String(data?.path ?? '') }
+    return parsePiExportHtml(res.data)
   }
 
   async switchSession(sessionPath: string): Promise<void> {

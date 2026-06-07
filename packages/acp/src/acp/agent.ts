@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import type { AvailableCommand } from '@agentclientprotocol/sdk'
 import {
@@ -26,8 +26,16 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk'
 import { PiRpcProcess } from '../pi-rpc/process.js'
+import {
+  asThinkingLevel,
+  type PiAvailableModels,
+  type PiState,
+  parsePiAvailableModels,
+  parsePiState,
+} from '../pi-rpc/schemas.js'
 import { getAuthMethods } from './auth.js'
 import { maybeAuthRequiredError } from './auth-required.js'
+import { getBuiltinCommandHandler, makeCommandContext } from './builtin-commands.js'
 import {
   isAcpCompatible,
   type PiRpcCommandInfo,
@@ -35,6 +43,7 @@ import {
 } from './pi-commands.js'
 import { findPiSessionFile, listPiSessions } from './pi-sessions.js'
 import { getAgentDir, getEnableSkillCommands, getQuietStartup } from './pi-settings.js'
+import type { PiAcpSession } from './session.js'
 import { SessionManager } from './session.js'
 import { SessionStore } from './session-store.js'
 import { loadSlashCommands, parseCommandArgs, toAvailableCommands } from './slash-commands.js'
@@ -124,7 +133,7 @@ export class PiAcpAgent implements ACPAgent {
     void _config
   }
 
-  private cleanupFailedNewSession(sessionId: string, state?: any | null): void {
+  private cleanupFailedNewSession(sessionId: string, state?: PiState | null): void {
     this.sessions.close(sessionId)
 
     const sessionFile =
@@ -197,8 +206,8 @@ export class PiAcpAgent implements ACPAgent {
     })
 
     // Fetch state + models once (parallel) to reduce startup latency.
-    let state: any = null
-    let availableModels: any = null
+    let state: PiState | null = null
+    let availableModels: PiAvailableModels | null = null
     let stateErr: unknown = null
     let availableModelsErr: unknown = null
 
@@ -206,7 +215,7 @@ export class PiAcpAgent implements ACPAgent {
       session.proc
         .getState()
         .then((s) => {
-          state = s as any
+          state = parsePiState(s)
         })
         .catch((err) => {
           stateErr = err
@@ -215,7 +224,7 @@ export class PiAcpAgent implements ACPAgent {
       session.proc
         .getAvailableModels()
         .then((m) => {
-          availableModels = m as any
+          availableModels = parsePiAvailableModels(m)
         })
         .catch((err) => {
           availableModelsErr = err
@@ -239,9 +248,7 @@ export class PiAcpAgent implements ACPAgent {
     }
 
     // If pi has no models available after spawning, it's effectively unauthenticated.
-    const rawModelsCount = Array.isArray(availableModels?.models)
-      ? availableModels.models.length
-      : 0
+    const rawModelsCount = (availableModels as PiAvailableModels | null)?.models.length ?? 0
 
     if (rawModelsCount === 0) {
       this.cleanupFailedNewSession(session.sessionId, state)
@@ -362,495 +369,14 @@ export class PiAcpAgent implements ACPAgent {
       const argsString = space === -1 ? '' : trimmed.slice(space + 1)
       const args = parseCommandArgs(argsString)
 
-      if (cmd === 'compact') {
-        const customInstructions = args.join(' ').trim() || undefined
-        const res = await session.proc.compact(customInstructions)
-
-        const r: any = res && typeof res === 'object' ? (res as any) : null
-        const tokensBefore = typeof r?.tokensBefore === 'number' ? r.tokensBefore : null
-        const summary = typeof r?.summary === 'string' ? r.summary : null
-
-        const headerLines = [
-          `Compaction completed.${customInstructions ? ' (custom instructions applied)' : ''}`,
-          tokensBefore !== null ? `Tokens before: ${tokensBefore}` : null,
-        ].filter(Boolean)
-
-        const text = headerLines.join('\n') + (summary ? `\n\n${summary}` : '')
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
-      }
-
-      if (cmd === 'session') {
-        const stats = (await session.proc.getSessionStats()) as any
-
-        const lines: string[] = []
-        if (stats?.sessionId) lines.push(`Session: ${stats.sessionId}`)
-        if (stats?.sessionFile) lines.push(`Session file: ${stats.sessionFile}`)
-        if (typeof stats?.totalMessages === 'number') lines.push(`Messages: ${stats.totalMessages}`)
-
-        if (typeof stats?.cost === 'number') lines.push(`Cost: ${stats.cost}`)
-
-        const t = stats?.tokens
-        if (t && typeof t === 'object') {
-          const parts: string[] = []
-          if (typeof t.input === 'number') parts.push(`in ${t.input}`)
-          if (typeof t.output === 'number') parts.push(`out ${t.output}`)
-          if (typeof t.cacheRead === 'number') parts.push(`cache read ${t.cacheRead}`)
-          if (typeof t.cacheWrite === 'number') parts.push(`cache write ${t.cacheWrite}`)
-          if (typeof t.total === 'number') parts.push(`total ${t.total}`)
-          if (parts.length) lines.push(`Tokens: ${parts.join(', ')}`)
-        }
-
-        // Fallback if stats shape changes.
-        const text = lines.length
-          ? lines.join('\n')
-          : `Session stats:\n${JSON.stringify(stats, null, 2)}`
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
-      }
-
-      if (cmd === 'name') {
-        const name = args.join(' ').trim()
-        if (!name) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: { type: 'text', text: 'Usage: /name <name>' },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        try {
-          await session.proc.setSessionName(name)
-        } catch (e: any) {
-          const msg = String(e?.message ?? e)
-          const hint = /set_session_name/i.test(msg)
-            ? ' This requires a newer pi version that supports `set_session_name` in RPC mode.'
-            : ''
-
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: { type: 'text', text: `Failed to set session name: ${msg}${hint}` },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'session_info_update',
-            title: name,
-            updatedAt: new Date().toISOString(),
-          },
-        })
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: `Session name set: ${name}` },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
-      }
-
-      if (cmd === 'steering') {
-        const modeRaw = String(args[0] ?? '').toLowerCase()
-        const state = (await session.proc.getState()) as any
-        const current = String(state?.steeringMode ?? '')
-
-        // If no arg, just report current.
-        if (!modeRaw) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: `Steering mode: ${current || 'unknown'}`,
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        if (modeRaw !== 'all' && modeRaw !== 'one-at-a-time') {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: 'Usage: /steering all | /steering one-at-a-time',
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        await session.proc.setSteeringMode(modeRaw as 'all' | 'one-at-a-time')
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: `Steering mode set to: ${modeRaw}` },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
-      }
-
-      if (cmd === 'follow-up') {
-        const modeRaw = String(args[0] ?? '').toLowerCase()
-        const state = (await session.proc.getState()) as any
-        const current = String(state?.followUpMode ?? '')
-
-        // If no arg, just report current.
-        if (!modeRaw) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: `Follow-up mode: ${current || 'unknown'}`,
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        if (modeRaw !== 'all' && modeRaw !== 'one-at-a-time') {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: 'Usage: /follow-up all | /follow-up one-at-a-time',
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        await session.proc.setFollowUpMode(modeRaw as 'all' | 'one-at-a-time')
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: `Follow-up mode set to: ${modeRaw}` },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
-      }
-
-      if (cmd === 'changelog') {
-        // Read pi's installed CHANGELOG.md. Adapter-side, no model call.
-        const findChangelog = (): string | null => {
-          // 1) Locate the installed pi package by resolving the `pi` executable.
-          // On Node installs, `pi` typically resolves to .../@earendil-works/pi-coding-agent/dist/cli.js
-          try {
-            const whichCmd = process.platform === 'win32' ? 'where' : 'which'
-            const which = spawnSync(whichCmd, ['pi'], { encoding: 'utf-8' })
-            const piPath = String(which.stdout ?? '')
-              .split(/\r?\n/)[0]
-              ?.trim()
-
-            if (piPath) {
-              const resolved = realpathSync(piPath)
-              const pkgRoot = dirname(dirname(resolved))
-              const p = join(pkgRoot, 'CHANGELOG.md')
-              if (existsSync(p)) return p
-            }
-          } catch {
-            // ignore
-          }
-
-          // 2) Fallback: ask npm where global modules live.
-          try {
-            const npmRoot = spawnSync('npm', ['root', '-g'], { encoding: 'utf-8' })
-            const root = String(npmRoot.stdout ?? '').trim()
-            if (root) {
-              const p = join(root, '@earendil-works', 'pi-coding-agent', 'CHANGELOG.md')
-              if (existsSync(p)) return p
-            }
-          } catch {
-            // ignore
-          }
-
-          return null
-        }
-
-        const changelogPath = findChangelog()
-        if (!changelogPath) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: "Changelog not found (couldn't locate pi installation).",
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        let text = ''
-        try {
-          text = readFileSync(changelogPath, 'utf-8')
-        } catch (e: any) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: `Failed to read changelog: ${String(e?.message ?? e)}`,
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        // Keep it reasonably sized in chat.
-        const maxChars = 20_000
-        if (text.length > maxChars) text = text.slice(0, maxChars) + '\n\n...(truncated)...'
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
-      }
-
-      if (cmd === 'export') {
-        // For now we always export into the session cwd and do not accept a user-provided path.
-        // IMPORTANT: pi's export_html reads the session JSONL file. If it doesn't exist yet
-        // (no messages) or is empty, pi throws and RPC mode emits an uncorrelated parse error
-        // (no id), which would otherwise hang our request. So we guard here.
-        const state = (await session.proc.getState()) as any
-        const sessionFile = typeof state?.sessionFile === 'string' ? state.sessionFile : null
-        const messageCount = typeof state?.messageCount === 'number' ? state.messageCount : 0
-
-        if (!sessionFile || messageCount === 0 || !existsSync(sessionFile)) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: 'Nothing to export yet (no session messages). Send a prompt first.',
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        try {
-          const raw = readFileSync(sessionFile, 'utf-8')
-          if (raw.trim().length === 0) {
-            await this.conn.sessionUpdate({
-              sessionId: session.sessionId,
-              update: {
-                sessionUpdate: 'agent_message_chunk',
-                content: {
-                  type: 'text',
-                  text: 'Nothing to export yet (empty session file). Send a prompt first.',
-                },
-              },
-            })
-            return { stopReason: 'end_turn' }
-          }
-        } catch {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: "Couldn't read session file for export. Try sending a prompt first.",
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        const safeSessionId = session.sessionId.replace(/[^a-zA-Z0-9_-]/g, '_')
-        const outputPath = join(session.cwd, `pi-session-${safeSessionId}.html`)
-
-        let resultPath = ''
-        try {
-          const result = await session.proc.exportHtml(outputPath)
-          resultPath = result.path
-        } catch (e: any) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: `Export failed: ${String(e?.message ?? e)}`,
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        if (!resultPath) {
-          await this.conn.sessionUpdate({
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: {
-                type: 'text',
-                text: 'Export failed: no output path returned by pi.',
-              },
-            },
-          })
-          return { stopReason: 'end_turn' }
-        }
-
-        const uri = `file://${resultPath}`
-
-        // Emit a short prefix + a resource link. Many clients concatenate chunks into a single
-        // assistant message, so this avoids the "link + duplicate plain text" look.
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: {
-              type: 'text',
-              text: 'Session exported: ',
-            },
-          },
-        })
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: {
-              type: 'resource_link',
-              name: `pi-session-${safeSessionId}.html`,
-              uri,
-              mimeType: 'text/html',
-              title: 'Session exported',
-            },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
-      }
-
-      if (cmd === 'autocompact') {
-        const mode = (args[0] ?? 'toggle').toLowerCase()
-        let enabled: boolean | null = null
-        if (mode === 'on' || mode === 'true' || mode === 'enable' || mode === 'enabled')
-          enabled = true
-        else if (mode === 'off' || mode === 'false' || mode === 'disable' || mode === 'disabled')
-          enabled = false
-
-        if (enabled === null) {
-          // toggle: read current state and invert.
-          const state = (await session.proc.getState()) as any
-          const current = Boolean(state?.autoCompactionEnabled)
-          enabled = !current
-        }
-
-        await session.proc.setAutoCompaction(enabled)
-
-        await this.conn.sessionUpdate({
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: {
-              type: 'text',
-              text: `Auto-compaction ${enabled ? 'enabled' : 'disabled'}.`,
-            },
-          },
-        })
-
-        return { stopReason: 'end_turn' }
+      const handler = getBuiltinCommandHandler(cmd)
+      if (handler) {
+        return handler(makeCommandContext(session, this.conn, args))
       }
 
       // Extension commands must opt into ACP compatibility via `// @pi-acp-compatible`.
-      try {
-        const pi = (await session.proc.getCommands()) as any
-        const raw: PiRpcCommandInfo[] = Array.isArray(pi?.commands)
-          ? pi.commands
-          : Array.isArray(pi?.data?.commands)
-            ? pi.data.commands
-            : []
-        const piCommand = raw.find((c) => typeof c?.name === 'string' && c.name.trim() === cmd)
-        if (piCommand && typeof piCommand.source === 'string' && piCommand.source === 'extension') {
-          if (!isAcpCompatible(piCommand)) {
-            await this.conn.sessionUpdate({
-              sessionId: session.sessionId,
-              update: {
-                sessionUpdate: 'agent_message_chunk',
-                content: {
-                  type: 'text',
-                  text: `The /${cmd} extension command is not marked ACP-compatible.`,
-                },
-              },
-            })
-            return { stopReason: 'end_turn' }
-          }
-
-          try {
-            await session.proc.prompt(message, images)
-            await this.conn.sessionUpdate({
-              sessionId: session.sessionId,
-              update: {
-                sessionUpdate: 'agent_message_chunk',
-                content: { type: 'text', text: `Ran /${cmd}.` },
-              },
-            })
-          } catch (e: any) {
-            await this.conn.sessionUpdate({
-              sessionId: session.sessionId,
-              update: {
-                sessionUpdate: 'agent_message_chunk',
-                content: { type: 'text', text: `/${cmd} failed: ${String(e?.message ?? e)}` },
-              },
-            })
-          }
-          return { stopReason: 'end_turn' }
-        }
-      } catch {
-        // If command discovery fails, let pi handle the prompt normally.
-      }
+      const extensionResult = await this.tryRunExtensionCommand(session, cmd, message, images)
+      if (extensionResult) return extensionResult
     }
 
     const result = await session.prompt(message, images)
@@ -861,6 +387,53 @@ export class PiAcpAgent implements ACPAgent {
       result === 'error' ? (session.wasCancelRequested() ? 'cancelled' : 'end_turn') : result
 
     return { stopReason }
+  }
+
+  /**
+   * Attempt to run an ACP-compatible extension command. Returns a {@link PromptResponse} if the
+   * command was handled (run or rejected as incompatible), or `undefined` to let pi handle the
+   * prompt normally (unknown command or command discovery failed).
+   */
+  private async tryRunExtensionCommand(
+    session: PiAcpSession,
+    cmd: string,
+    message: string,
+    images: unknown[],
+  ): Promise<PromptResponse | undefined> {
+    const reply = (text: string) =>
+      this.conn.sessionUpdate({
+        sessionId: session.sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
+      })
+
+    let raw: PiRpcCommandInfo[]
+    try {
+      const pi = (await session.proc.getCommands()) as any
+      raw = Array.isArray(pi?.commands)
+        ? pi.commands
+        : Array.isArray(pi?.data?.commands)
+          ? pi.data.commands
+          : []
+    } catch {
+      // If command discovery fails, let pi handle the prompt normally.
+      return undefined
+    }
+
+    const piCommand = raw.find((c) => typeof c?.name === 'string' && c.name.trim() === cmd)
+    if (!piCommand || piCommand.source !== 'extension') return undefined
+
+    if (!isAcpCompatible(piCommand)) {
+      await reply(`The /${cmd} extension command is not marked ACP-compatible.`)
+      return { stopReason: 'end_turn' }
+    }
+
+    try {
+      await session.proc.prompt(message, images)
+      await reply(`Ran /${cmd}.`)
+    } catch (e) {
+      await reply(`/${cmd} failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    return { stopReason: 'end_turn' }
   }
 
   async cancel(params: CancelNotification): Promise<void> {
@@ -1198,12 +771,11 @@ async function setPiModel(proc: PiRpcProcess, requestedModelId: string): Promise
   }
 
   if (!provider) {
-    const data = (await proc.getAvailableModels()) as any
-    const models: any[] = Array.isArray(data?.models) ? data.models : []
-    const found = models.find((m) => String(m?.id) === modelId)
-    if (found) {
-      provider = String(found.provider)
-      modelId = String(found.id)
+    const data = parsePiAvailableModels(await proc.getAvailableModels())
+    const found = data.models.find((m) => m.id === modelId)
+    if (found?.provider && found.id) {
+      provider = found.provider
+      modelId = found.id
     }
   }
 
@@ -1216,7 +788,7 @@ async function setPiModel(proc: PiRpcProcess, requestedModelId: string): Promise
 
 async function getThinkingState(
   proc: PiRpcProcess,
-  pre?: { state?: any | null },
+  pre?: { state?: PiState | null },
 ): Promise<{
   availableModes: Array<{
     id: string
@@ -1232,14 +804,14 @@ async function getThinkingState(
     pre?.state ??
     (await (async () => {
       try {
-        return (await proc.getState()) as any
+        return parsePiState(await proc.getState())
       } catch {
         return null
       }
     })())
 
-  const tl = typeof state?.thinkingLevel === 'string' ? state.thinkingLevel : null
-  if (tl && isThinkingLevel(tl)) current = tl
+  const tl = asThinkingLevel(state?.thinkingLevel)
+  if (tl) current = tl
 
   const available: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 
@@ -1255,7 +827,7 @@ async function getThinkingState(
 
 async function getModelState(
   proc: PiRpcProcess,
-  pre?: { state?: any | null; availableModels?: any | null },
+  pre?: { state?: PiState | null; availableModels?: PiAvailableModels | null },
 ): Promise<{
   availableModels: ModelInfo[]
   currentModelId: string
@@ -1267,20 +839,19 @@ async function getModelState(
     pre?.availableModels ??
     (await (async () => {
       try {
-        return (await proc.getAvailableModels()) as any
+        return parsePiAvailableModels(await proc.getAvailableModels())
       } catch {
         return null
       }
     })())
 
-  const models: any[] = Array.isArray(data?.models) ? data.models : []
-  availableModels = models
+  availableModels = (data?.models ?? [])
     .map((m) => {
-      const provider = String(m?.provider ?? '').trim()
-      const id = String(m?.id ?? '').trim()
+      const provider = String(m.provider ?? '').trim()
+      const id = String(m.id ?? '').trim()
       if (!provider || !id) return null
 
-      const name = String(m?.name ?? id)
+      const name = String(m.name ?? id)
       return {
         modelId: `${provider}/${id}`,
         name: `${provider}/${name}`,
@@ -1296,16 +867,16 @@ async function getModelState(
     pre?.state ??
     (await (async () => {
       try {
-        return (await proc.getState()) as any
+        return parsePiState(await proc.getState())
       } catch {
         return null
       }
     })())
 
   const model = state?.model
-  if (model && typeof model === 'object') {
-    const provider = String((model as any).provider ?? '').trim()
-    const id = String((model as any).id ?? '').trim()
+  if (model) {
+    const provider = String(model.provider ?? '').trim()
+    const id = String(model.id ?? '').trim()
     if (provider && id) currentModelId = `${provider}/${id}`
   }
 

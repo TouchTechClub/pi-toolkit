@@ -73,7 +73,7 @@ You must provide the task id. You may optionally provide a new status, priority,
 Task status values: pending, in_progress, completed
 Task priority values: high, medium, low`
 
-function normalizeTodo(
+export function normalizeTodo(
   todo: Partial<TodoItem> & Record<string, unknown>,
 ): Omit<TodoItem, 'id'> & { id?: number } {
   const status = String(todo.status ?? 'pending')
@@ -93,7 +93,9 @@ function normalizeTodo(
   return result
 }
 
-function validateTodos(input: Array<Partial<TodoItem> & Record<string, unknown>>): TodoItem[] {
+export function validateTodos(
+  input: Array<Partial<TodoItem> & Record<string, unknown>>,
+): TodoItem[] {
   const normalized = input.map(normalizeTodo)
   const errors: string[] = []
 
@@ -174,14 +176,46 @@ function todosFromResult(
   }
 }
 
+/** Todos that are not yet completed, in their original order. */
+export function openTodos(todos: TodoItem[]): TodoItem[] {
+  return todos.filter((todo) => todo.status !== 'completed')
+}
+
+/**
+ * Render the current task list as a plain-text reminder injected into model
+ * context each turn. Returns undefined when there is nothing worth injecting
+ * (no todos, or every todo is already completed).
+ */
+export function formatTodosForContext(todos: TodoItem[]): string | undefined {
+  const open = openTodos(todos)
+  if (open.length === 0) return undefined
+  const lines = todos.map((todo) => {
+    const mark = todo.status === 'completed' ? '[x]' : todo.status === 'in_progress' ? '[~]' : '[ ]'
+    return `${mark} (${todo.id}) ${todo.content}`
+  })
+  return [
+    '[CURRENT TODO LIST]',
+    `${open.length} of ${todos.length} task(s) remaining. Keep this list updated via todowrite/patchtodo as you work.`,
+    '',
+    ...lines,
+  ].join('\n')
+}
+
+/** Compact `done/total` progress string for the status bar, or undefined when empty. */
+export function formatTodoStatus(todos: TodoItem[]): string | undefined {
+  if (todos.length === 0) return undefined
+  const inProgress = todos.filter((t) => t.status === 'in_progress').length
+  const completed = todos.filter((t) => t.status === 'completed').length
+  const icon = inProgress > 0 ? '◐' : completed === todos.length ? '✓' : '○'
+  return `${icon} todos ${completed}/${todos.length}`
+}
+
 export default function (pi: ExtensionAPI) {
   let todos: TodoItem[] = []
-  let nextId = 1
 
   // Reconstruct state from session on start/reload
   pi.on('session_start', async (_event, ctx) => {
     todos = []
-    nextId = 1
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type !== 'message') continue
       if (entry.message.role !== 'toolResult') continue
@@ -190,8 +224,23 @@ export default function (pi: ExtensionAPI) {
       const items = entry.message.details?.todos as TodoItem[] | undefined
       if (Array.isArray(items) && items.length > 0) {
         todos = items
-        nextId = Math.max(...items.map((t) => t.id), 0) + 1
       }
+    }
+  })
+
+  // Inject the live task list into model context each turn so long sessions
+  // keep their plan in working memory instead of relying on the model to
+  // re-read its own past tool output. The injected message is ephemeral: the
+  // context event hands us a fresh deep copy of the transcript every turn, so
+  // appending here never persists or accumulates.
+  pi.on('context', (event) => {
+    const text = formatTodosForContext(todos)
+    if (!text) return
+    return {
+      messages: [
+        ...event.messages,
+        { role: 'user' as const, content: text, timestamp: Date.now() },
+      ],
     }
   })
 
@@ -208,13 +257,12 @@ export default function (pi: ExtensionAPI) {
     ],
     parameters: TodoWriteParams,
 
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const result = validateTodos(
         params.todos as Array<Partial<TodoItem> & Record<string, unknown>>,
       )
 
       todos = result
-      nextId = Math.max(...result.map((t) => t.id), 0) + 1
 
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -257,7 +305,7 @@ export default function (pi: ExtensionAPI) {
     ],
     parameters: PatchTodoParams,
 
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const id = params.id as number
       const status = params.status as string | undefined
       const priority = params.priority as string | undefined
@@ -303,7 +351,7 @@ export default function (pi: ExtensionAPI) {
             text: `Patched task ${id}: ${JSON.stringify(todos[index], null, 2)}`,
           },
         ],
-        details: { todos },
+        details: { todos, patchedId: id },
       }
     },
 

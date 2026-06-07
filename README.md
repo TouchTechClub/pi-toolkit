@@ -25,7 +25,7 @@ bun run check        # Check all packages with Biome (format + lint)
 
 ## Publishing
 
-Push to `main` with a version bump in a package's `package.json`. The [publish workflow](./.github/workflows/publish.yml) detects changed packages with version bumps and publishes them to npm automatically.
+Push to the `release` branch with a version bump in a package's `package.json`. The [publish workflow](./.github/workflows/publish.yml) detects changed packages with version bumps and publishes them to npm automatically.
 
 ## License
 

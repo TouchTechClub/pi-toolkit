@@ -12,6 +12,9 @@ const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_FETCH_TIMEOUT = 30_000 // 30 seconds
 const MAX_FETCH_TIMEOUT = 120_000 // 2 minutes
 const SEARCH_TIMEOUT = 25_000 // 25 seconds
+// Single source of truth for the User-Agent version. Keep in sync with package.json on bump.
+const VERSION = '0.2.0'
+const USER_AGENT_ID = `pi-oc-web-tools/${VERSION}`
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
 
@@ -45,7 +48,7 @@ function exaUrl(): string {
 
 function parallelAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
-    'User-Agent': `pi-oc-web-tools/0.1.0`,
+    'User-Agent': USER_AGENT_ID,
   }
   if (process.env.PARALLEL_API_KEY) {
     headers.Authorization = `Bearer ${process.env.PARALLEL_API_KEY}`
@@ -53,7 +56,7 @@ function parallelAuthHeaders(): Record<string, string> {
   return headers
 }
 
-function selectWebSearchProvider(): 'exa' | 'parallel' {
+export function selectWebSearchProvider(): 'exa' | 'parallel' {
   const override = process.env.OC_WEBSEARCH_PROVIDER
   if (override === 'exa' || override === 'parallel') return override
   if (process.env.PARALLEL_API_KEY) return 'parallel'
@@ -62,13 +65,134 @@ function selectWebSearchProvider(): 'exa' | 'parallel' {
   return 'exa'
 }
 
-function isImageAttachment(mime: string): boolean {
+export function isImageAttachment(mime: string): boolean {
   return IMAGE_MIMES.has(mime.split(';')[0]?.trim().toLowerCase() ?? '')
 }
 
-function truncateText(text: string, maxChars: number): string {
+export function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text
   return text.slice(0, maxChars) + `\n\n... [${text.length - maxChars} characters truncated] ...`
+}
+
+// ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+const FETCH_WINDOW = 50_000
+
+export interface PaginatedText {
+  text: string
+  /** Total length of the underlying content, before windowing. */
+  total: number
+  /** Byte offset this window started at (clamped to [0, total]). */
+  offset: number
+  /** Offset to pass next to continue reading, or undefined when at the end. */
+  nextOffset?: number
+}
+
+/**
+ * Return a `limit`-character window of `text` starting at `offset`, plus the
+ * metadata needed to page through the rest. Pure so it can be unit-tested.
+ */
+export function paginate(text: string, offset: number, limit: number): PaginatedText {
+  const total = text.length
+  const start = Math.min(Math.max(0, Math.floor(offset) || 0), total)
+  const end = Math.min(start + limit, total)
+  return {
+    text: text.slice(start, end),
+    total,
+    offset: start,
+    nextOffset: end < total ? end : undefined,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// In-session response cache
+// ---------------------------------------------------------------------------
+
+const CACHE_TTL_MS = 5 * 60_000 // 5 minutes
+const CACHE_MAX_ENTRIES = 50
+
+export interface CachedFetch {
+  output: string
+  contentType: string
+  sizeBytes: number
+}
+
+export function fetchCacheKey(url: string, format: string): string {
+  return `${format}\u0000${url}`
+}
+
+/**
+ * Small TTL + LRU-bounded cache for webfetch text responses. Re-fetching the
+ * same URL within a session (common when the model re-reads a doc) is served
+ * from memory instead of hitting the network again.
+ */
+export class ResponseCache {
+  private readonly store = new Map<string, { value: CachedFetch; expiresAt: number }>()
+
+  constructor(
+    private readonly ttlMs: number = CACHE_TTL_MS,
+    private readonly maxEntries: number = CACHE_MAX_ENTRIES,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  get(key: string): CachedFetch | undefined {
+    const entry = this.store.get(key)
+    if (!entry) return undefined
+    if (entry.expiresAt <= this.now()) {
+      this.store.delete(key)
+      return undefined
+    }
+    // Refresh recency for LRU ordering.
+    this.store.delete(key)
+    this.store.set(key, entry)
+    return entry.value
+  }
+
+  set(key: string, value: CachedFetch): void {
+    this.store.delete(key)
+    this.store.set(key, { value, expiresAt: this.now() + this.ttlMs })
+    while (this.store.size > this.maxEntries) {
+      const oldest = this.store.keys().next().value
+      if (oldest === undefined) break
+      this.store.delete(oldest)
+    }
+  }
+
+  get size(): number {
+    return this.store.size
+  }
+}
+
+// ---------------------------------------------------------------------------
+// webfetch result windowing
+// ---------------------------------------------------------------------------
+
+/** Build a paginated webfetch tool result from cached/fresh content. */
+function windowed(
+  entry: CachedFetch,
+  meta: { url: string; format: string; offset: number; fromCache: boolean },
+): { content: { type: 'text'; text: string }[]; details: Record<string, unknown> } {
+  const page = paginate(entry.output, meta.offset, FETCH_WINDOW)
+  let text = page.text
+  if (page.nextOffset !== undefined) {
+    text += `\n\n... [${page.total - page.nextOffset} more characters] continue with offset=${page.nextOffset} ...`
+  }
+  return {
+    content: [{ type: 'text', text }],
+    details: {
+      url: meta.url,
+      format: meta.format,
+      contentType: entry.contentType,
+      sizeBytes: entry.sizeBytes,
+      total: page.total,
+      offset: page.offset,
+      nextOffset: page.nextOffset,
+      truncated: page.nextOffset !== undefined,
+      fromCache: meta.fromCache,
+    },
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +235,7 @@ function parseMcpPayload(payload: string): string | undefined {
 /**
  * Parse a complete MCP response body (raw JSON or SSE stream).
  */
-function parseMcpResponse(body: string): string | undefined {
+export function parseMcpResponse(body: string): string | undefined {
   const trimmed = body.trim()
   // Try direct JSON first
   const direct = parseMcpPayload(trimmed)
@@ -206,7 +330,7 @@ function htmlToMarkdown(html: string): string {
   return turndownService.turndown(html)
 }
 
-function htmlToText(html: string): string {
+export function htmlToText(html: string): string {
   // Simple tag-stripping text extraction
   let text = ''
   let skip = 0
@@ -257,6 +381,17 @@ const WebFetchParams = Type.Object({
     }),
   ),
   timeout: Type.Optional(Type.Number({ description: 'Optional timeout in seconds (max 120)' })),
+  offset: Type.Optional(
+    Type.Number({
+      description:
+        'Character offset to start reading from (default 0). Use the nextOffset from a previous response to page through long content.',
+    }),
+  ),
+  noCache: Type.Optional(
+    Type.Boolean({
+      description: 'Bypass the in-session response cache and force a fresh fetch (default false).',
+    }),
+  ),
 })
 
 const WEBFETCH_DESCRIPTION = `- Fetches content from a specified URL
@@ -269,7 +404,9 @@ Usage notes:
   - The URL must be a fully-formed valid URL starting with http:// or https://
   - Format options: "markdown" (default), "text", or "html"
   - This tool is read-only and does not modify any files
-  - Results may be truncated if the content is very large (max ${MAX_RESPONSE_SIZE / (1024 * 1024)}MB)`
+  - Long content is returned in ${FETCH_WINDOW / 1000}KB windows. If the response reports a nextOffset, call again with that offset to read the next window.
+  - Responses are cached in-session for 5 minutes; pass noCache=true to force a fresh fetch
+  - Hard cap on a single fetch is ${MAX_RESPONSE_SIZE / (1024 * 1024)}MB`
 
 // ---------------------------------------------------------------------------
 // websearch Tool
@@ -310,8 +447,10 @@ Usage notes:
 // ---------------------------------------------------------------------------
 
 export default function webTools(pi: ExtensionAPI) {
+  const fetchCache = new ResponseCache()
+
   // ---- webfetch tool ----
-  pi.registerTool({
+  pi.registerTool<typeof WebFetchParams, Record<string, unknown>>({
     name: 'webfetch',
     label: 'Web Fetch',
     description: WEBFETCH_DESCRIPTION,
@@ -327,6 +466,8 @@ export default function webTools(pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal) {
       const url = params.url as string
       const format = (params.format as string) || 'markdown'
+      const offset = (params.offset as number) ?? 0
+      const noCache = (params.noCache as boolean) ?? false
       const timeoutMs = Math.min(
         ((params.timeout as number) ?? DEFAULT_FETCH_TIMEOUT / 1000) * 1000,
         MAX_FETCH_TIMEOUT,
@@ -337,6 +478,12 @@ export default function webTools(pi: ExtensionAPI) {
           content: [{ type: 'text', text: 'Error: URL must start with http:// or https://' }],
           details: { error: true, reason: 'invalid_url' },
         }
+      }
+
+      const cacheKey = fetchCacheKey(url, format)
+      const cached = noCache ? undefined : fetchCache.get(cacheKey)
+      if (cached) {
+        return windowed(cached, { url, format, offset, fromCache: true })
       }
 
       const controller = new AbortController()
@@ -374,7 +521,7 @@ export default function webTools(pi: ExtensionAPI) {
         if (response.status === 403 && response.headers.get('cf-mitigated') === 'challenge') {
           finalResponse = await fetch(url, {
             headers: {
-              'User-Agent': 'pi-oc-web-tools',
+              'User-Agent': USER_AGENT_ID,
               Accept: acceptHeader,
               'Accept-Language': 'en-US,en;q=0.9',
             },
@@ -462,21 +609,14 @@ export default function webTools(pi: ExtensionAPI) {
             break
         }
 
-        const truncated = output.length > 50_000
-        if (truncated) {
-          output = truncateText(output, 50_000)
+        const cacheEntry: CachedFetch = {
+          output,
+          contentType,
+          sizeBytes: arrayBuffer.byteLength,
         }
+        if (!noCache) fetchCache.set(cacheKey, cacheEntry)
 
-        return {
-          content: [{ type: 'text', text: output }],
-          details: {
-            url,
-            format,
-            contentType,
-            truncated,
-            sizeBytes: arrayBuffer.byteLength,
-          },
-        }
+        return windowed(cacheEntry, { url, format, offset, fromCache: false })
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return {
@@ -501,7 +641,7 @@ export default function webTools(pi: ExtensionAPI) {
   })
 
   // ---- websearch tool ----
-  pi.registerTool({
+  pi.registerTool<typeof WebSearchParams, Record<string, unknown>>({
     name: 'websearch',
     label: 'Web Search',
     description: WEBSEARCH_DESCRIPTION,

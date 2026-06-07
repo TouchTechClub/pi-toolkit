@@ -27,8 +27,8 @@
         "noImplicitAnyLet": "off"
       },
       "correctness": {
-        "noUnusedPrivateClassMembers": "off",
-        "noUnusedVariables": "off"
+        "noUnusedPrivateClassMembers": "warn",
+        "noUnusedVariables": "warn"
       }
     }
   },
