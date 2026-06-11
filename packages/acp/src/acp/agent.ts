@@ -20,7 +20,12 @@ import {
   type PromptRequest,
   type PromptResponse,
   RequestError,
+  type SessionConfigOption,
+  type SessionConfigSelectGroup,
+  type SessionConfigSelectOption,
   type SessionInfo,
+  type SetSessionConfigOptionRequest,
+  type SetSessionConfigOptionResponse,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
   type StopReason,
@@ -294,10 +299,13 @@ export class PiAcpAgent implements ACPAgent {
       // (Tests sometimes stub out `this.sessions`, so guard the call.)
     ;(this.sessions as any).closeAllExcept?.(session.sessionId)
 
+    const configOptions = buildConfigOptions(models, thinking)
+
     const response = {
       sessionId: session.sessionId,
       models,
       modes: thinking,
+      configOptions,
       _meta: {
         piAcp: {
           startupInfo: preludeText || null,
@@ -672,10 +680,12 @@ export class PiAcpAgent implements ACPAgent {
 
     const models = await getModelState(proc)
     const thinking = await getThinkingState(proc)
+    const configOptions = buildConfigOptions(models, thinking)
 
     const response = {
       models,
       modes: thinking,
+      configOptions,
       _meta: {
         piAcp: {
           startupInfo: null,
@@ -724,6 +734,8 @@ export class PiAcpAgent implements ACPAgent {
   async unstable_setSessionModel(params: { sessionId: string; modelId: string }): Promise<void> {
     const session = this.sessions.get(params.sessionId)
     await setPiModel(session.proc, params.modelId)
+    // Emit config option update to reflect the new model in modern clients.
+    void this.emitModelConfigUpdate(session)
   }
 
   async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
@@ -745,7 +757,99 @@ export class PiAcpAgent implements ACPAgent {
       },
     })
 
+    // Also emit config_option_update for modern clients that use configOptions.
+    void this.emitThinkingConfigUpdate(session.sessionId, mode)
+
     return {}
+  }
+
+  async setSessionConfigOption(
+    params: SetSessionConfigOptionRequest,
+  ): Promise<SetSessionConfigOptionResponse> {
+    const session = this.sessions.get(params.sessionId)
+
+    const configId = (params as any).configId as string
+
+    if (configId === 'model') {
+      const value = (params as { value: string }).value
+      if (typeof value !== 'string' || !value) {
+        throw RequestError.invalidParams('model value must be a non-empty string')
+      }
+      await setPiModel(session.proc, value)
+      // Emit config option update to reflect the new model in UI.
+      void this.emitModelConfigUpdate(session)
+      return this.buildConfigOptionResponse(session)
+    }
+
+    if (configId === 'thought_level') {
+      const value = (params as { value: string }).value
+      if (typeof value !== 'string' || !value) {
+        throw RequestError.invalidParams('thought_level value must be a non-empty string')
+      }
+      if (!isThinkingLevel(value)) {
+        throw RequestError.invalidParams(`Unknown thinking level: ${value}`)
+      }
+      await session.proc.setThinkingLevel(value)
+      return this.buildConfigOptionResponse(session)
+    }
+
+    throw RequestError.invalidParams(`Unknown config option: ${configId}`)
+  }
+
+  /** Build a SetSessionConfigOptionResponse from the current session state. */
+  private async buildConfigOptionResponse(
+    session: PiAcpSession,
+  ): Promise<SetSessionConfigOptionResponse> {
+    const models = await getModelState(session.proc)
+    const thinking = await getThinkingState(session.proc)
+    const configOptions = buildConfigOptions(models, thinking)
+    return { configOptions }
+  }
+
+  /** Emit a config_option_update reflecting the current model. */
+  private async emitModelConfigUpdate(session: PiAcpSession): Promise<void> {
+    try {
+      const models = await getModelState(session.proc)
+      const thinking = await getThinkingState(session.proc)
+      const configOptions = buildConfigOptions(models, thinking)
+
+      void this.conn.sessionUpdate({
+        sessionId: session.sessionId,
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions,
+        },
+      })
+    } catch {
+      // Best-effort; ignore failures.
+    }
+  }
+
+  /** Emit a config_option_update reflecting the current thinking level. */
+  private async emitThinkingConfigUpdate(sessionId: string, thinkingLevel: string): Promise<void> {
+    try {
+      const session = this.sessions.get(sessionId)
+      const models = await getModelState(session.proc)
+      const thinking = {
+        currentModeId: thinkingLevel,
+        availableModes: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].map((id) => ({
+          id,
+          name: `Thinking: ${id}`,
+          description: null,
+        })),
+      }
+      const configOptions = buildConfigOptions(models, thinking)
+
+      void this.conn.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions,
+        },
+      })
+    } catch {
+      // Best-effort; ignore failures.
+    }
   }
 }
 
@@ -889,6 +993,80 @@ async function getModelState(
     availableModels,
     currentModelId,
   }
+}
+
+function buildConfigOptions(
+  modelState: Awaited<ReturnType<typeof getModelState>>,
+  thinkingState: Awaited<ReturnType<typeof getThinkingState>>,
+): SessionConfigOption[] {
+  const options: SessionConfigOption[] = []
+
+  // Model selector grouped by provider.
+  if (modelState?.availableModels.length) {
+    const currentModelId = modelState.currentModelId
+
+    // Group models by provider.
+    const groups = new Map<string, { provider: string; models: ModelInfo[] }>()
+    for (const m of modelState.availableModels) {
+      const [provider] = m.modelId.split('/')
+      if (!provider) continue
+      const entry = groups.get(provider)
+      if (entry) {
+        entry.models.push(m)
+      } else {
+        groups.set(provider, { provider, models: [m] })
+      }
+    }
+
+    // Sort providers for stable output.
+    const sortedProviders = [...groups.keys()].sort()
+
+    const selectOptions: SessionConfigSelectGroup[] = sortedProviders.map((provider) => {
+      const group = groups.get(provider)!
+      return {
+        group: provider,
+        name: provider,
+        options: group.models.map(
+          (m) =>
+            ({
+              value: m.modelId,
+              name: m.name.startsWith(`${provider}/`) ? m.name.slice(provider.length + 1) : m.name,
+              description: null,
+            }) satisfies SessionConfigSelectOption,
+        ),
+      } satisfies SessionConfigSelectGroup
+    })
+
+    options.push({
+      type: 'select',
+      id: 'model',
+      name: 'Model',
+      category: 'model',
+      description: null,
+      currentValue: currentModelId,
+      options: selectOptions,
+    })
+  }
+
+  // Thinking level selector.
+  options.push({
+    type: 'select',
+    id: 'thought_level',
+    name: 'Thinking',
+    category: 'thought_level',
+    description: null,
+    currentValue: thinkingState.currentModeId,
+    options: thinkingState.availableModes.map(
+      (m) =>
+        ({
+          value: m.id,
+          name: m.name,
+          description: m.description,
+        }) satisfies SessionConfigSelectOption,
+    ),
+  })
+
+  return options
 }
 
 function isSemver(v: string): boolean {
