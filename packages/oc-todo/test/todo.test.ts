@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   formatTodoStatus,
-  formatTodosForContext,
+  formatTodosForRead,
   normalizeTodo,
   openTodos,
   validateTodos,
@@ -104,22 +104,28 @@ describe('formatTodoStatus', () => {
   })
 })
 
-describe('formatTodosForContext', () => {
-  test('undefined when empty or all completed', () => {
-    expect(formatTodosForContext([])).toBeUndefined()
-    expect(formatTodosForContext([item(1, 'completed')])).toBeUndefined()
+describe('formatTodosForRead', () => {
+  test('undefined when empty', () => {
+    expect(formatTodosForRead([])).toBeUndefined()
   })
 
   test('lists every todo with status markers and a remaining count', () => {
-    const out = formatTodosForContext([
+    const out = formatTodosForRead([
       item(1, 'completed', 'done thing'),
       item(2, 'in_progress', 'doing thing'),
       item(3, 'pending', 'todo thing'),
     ])
     expect(out).toContain('[CURRENT TODO LIST]')
-    expect(out).toContain('2 of 3 task(s) remaining')
+    expect(out).toContain('2 of 3 task(s) remaining.')
+    expect(out).toContain('[x] (1) done thing [medium]')
+    expect(out).toContain('[~] (2) doing thing [medium]')
+    expect(out).toContain('[ ] (3) todo thing [medium]')
+  })
+
+  test('still returns output when all todos are completed', () => {
+    const out = formatTodosForRead([item(1, 'completed', 'done thing')])
+    expect(out).toContain('[CURRENT TODO LIST]')
+    expect(out).toContain('0 of 1 task(s) remaining.')
     expect(out).toContain('[x] (1) done thing')
-    expect(out).toContain('[~] (2) doing thing')
-    expect(out).toContain('[ ] (3) todo thing')
   })
 })

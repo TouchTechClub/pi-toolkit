@@ -41,37 +41,16 @@ const PatchTodoParams = Type.Object({
   content: Type.Optional(Type.String({ description: 'Updated task description text' })),
 })
 
+const ReadTodoParams = Type.Object({})
+
 const VALID_STATUSES = new Set(['pending', 'in_progress', 'completed'])
 const VALID_PRIORITIES = new Set(['high', 'medium', 'low'])
 
-const TODOWRITE_DESCRIPTION = `Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and give the user visibility into your progress.
+const TODOWRITE_DESCRIPTION = `Create or replace the full structured task list for the current coding session. Each task gets an auto-assigned numeric id. Status values: pending, in_progress, completed. Priority values: high, medium, low.`
 
-Use todowrite proactively for complex or multi-step work, when the user explicitly asks for a todo list, when the user gives multiple tasks, after receiving new instructions, and after completing tasks so statuses stay current.
+const READTODO_DESCRIPTION = `Read the current todo list, including task ids, statuses, and priorities.`
 
-Do not use todowrite for a single straightforward task, trivial changes, commands with immediate results, or purely conversational/informational requests.
-
-Each task has a numeric id assigned automatically. Task status values:
-- pending: Task not yet started
-- in_progress: Currently working on the task (ideally keep at most ONE item in_progress)
-- completed: Task finished successfully
-
-Task priority values:
-- high: Urgent or important work
-- medium: Normal priority work
-- low: Nice-to-have or less urgent work
-
-Update the todo list in real time as you work. Mark tasks completed immediately after finishing them; do not batch completions. When you start a task, mark it in_progress. The todos argument must be the complete updated list, not a partial patch.
-
-Use patchtodo to update the status of a single task without rewriting the entire list.`
-
-const PATCHTODO_DESCRIPTION = `Update a single task's status (or other fields) by its numeric ID without having to rewrite the entire todo list.
-
-Use patchtodo when you only need to change one task — for example, marking a single task as completed or in_progress. This is more efficient than calling todowrite with the full list.
-
-You must provide the task id. You may optionally provide a new status, priority, or content. Only the fields you specify will be updated; unspecified fields keep their current values.
-
-Task status values: pending, in_progress, completed
-Task priority values: high, medium, low`
+const PATCHTODO_DESCRIPTION = `Update a single task by its numeric id without rewriting the full list. Provide the id and any fields to change; omitted fields keep their current values.`
 
 export function normalizeTodo(
   todo: Partial<TodoItem> & Record<string, unknown>,
@@ -182,20 +161,19 @@ export function openTodos(todos: TodoItem[]): TodoItem[] {
 }
 
 /**
- * Render the current task list as a plain-text reminder injected into model
- * context each turn. Returns undefined when there is nothing worth injecting
- * (no todos, or every todo is already completed).
+ * Render the current task list as plain text for read_todo output.
+ * Returns undefined when there is nothing to show (no todos).
  */
-export function formatTodosForContext(todos: TodoItem[]): string | undefined {
+export function formatTodosForRead(todos: TodoItem[]): string | undefined {
+  if (todos.length === 0) return undefined
   const open = openTodos(todos)
-  if (open.length === 0) return undefined
   const lines = todos.map((todo) => {
     const mark = todo.status === 'completed' ? '[x]' : todo.status === 'in_progress' ? '[~]' : '[ ]'
-    return `${mark} (${todo.id}) ${todo.content}`
+    return `${mark} (${todo.id}) ${todo.content} [${todo.priority}]`
   })
   return [
     '[CURRENT TODO LIST]',
-    `${open.length} of ${todos.length} task(s) remaining. Keep this list updated via todowrite/patchtodo as you work.`,
+    `${open.length} of ${todos.length} task(s) remaining.`,
     '',
     ...lines,
   ].join('\n')
@@ -228,22 +206,6 @@ export default function (pi: ExtensionAPI) {
     }
   })
 
-  // Inject the live task list into model context each turn so long sessions
-  // keep their plan in working memory instead of relying on the model to
-  // re-read its own past tool output. The injected message is ephemeral: the
-  // context event hands us a fresh deep copy of the transcript every turn, so
-  // appending here never persists or accumulates.
-  pi.on('context', (event) => {
-    const text = formatTodosForContext(todos)
-    if (!text) return
-    return {
-      messages: [
-        ...event.messages,
-        { role: 'user' as const, content: text, timestamp: Date.now() },
-      ],
-    }
-  })
-
   pi.registerTool({
     name: 'todowrite',
     label: 'todowrite',
@@ -254,6 +216,7 @@ export default function (pi: ExtensionAPI) {
       'Update todowrite as work progresses: mark one task in_progress when starting it, mark tasks completed immediately, and keep the list current.',
       'When calling todowrite, pass the complete updated todo list, not a partial patch. Use patchtodo to update a single task by ID.',
       'Each task gets a numeric id. Reference task ids when using patchtodo for single-task updates.',
+      'Use read_todo to check current tasks before updating.',
     ],
     parameters: TodoWriteParams,
 
@@ -302,6 +265,7 @@ export default function (pi: ExtensionAPI) {
       'Use patchtodo to update the status of a single task without rewriting the entire todo list with todowrite.',
       'Provide the task id (number) and optionally a new status, priority, or content. Unspecified fields keep their current values.',
       'Call patchtodo when marking a single task as in_progress or completed to avoid resending the full list.',
+      'Call read_todo first if you are unsure of the current task ids or statuses.',
     ],
     parameters: PatchTodoParams,
 
@@ -387,6 +351,47 @@ export default function (pi: ExtensionAPI) {
         } else {
           text = formatTodos(items, theme, options.expanded)
         }
+        return new Text(text, 0, 0)
+      }
+      const text = result.content
+        .filter((content) => content.type === 'text')
+        .map((content) => content.text || '')
+        .join('\n')
+      return new Text(text, 0, 0)
+    },
+  })
+
+  pi.registerTool({
+    name: 'read_todo',
+    label: 'read_todo',
+    description: READTODO_DESCRIPTION,
+    promptSnippet: 'Read the current todo list and task statuses',
+    promptGuidelines: [
+      'Use read_todo whenever you need to know the current tasks, their statuses, or ids.',
+      'Call read_todo before patchtodo if you are unsure which task id to update.',
+    ],
+    parameters: ReadTodoParams,
+
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      const text = formatTodosForRead(todos)
+      return {
+        content: [{ type: 'text', text: text ?? 'No todos.' }],
+        details: { todos },
+      }
+    },
+
+    renderCall(_args, theme) {
+      return new Text(
+        `${theme.fg('toolTitle', theme.bold('read_todo'))} ${theme.fg('muted', `${todos.length} todo${todos.length === 1 ? '' : 's'}`)}`,
+        0,
+        0,
+      )
+    },
+
+    renderResult(result, _options) {
+      const items = todosFromResult(result as AgentToolResult<{ todos?: TodoItem[] } | undefined>)
+      if (items) {
+        const text = formatTodosForRead(items) ?? 'No todos.'
         return new Text(text, 0, 0)
       }
       const text = result.content
