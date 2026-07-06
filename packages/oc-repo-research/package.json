@@ -1,6 +1,6 @@
 {
   "name": "@touchtechclub/pi-oc-repo-research",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Pi coding-agent extension: git repository cloning and overview tools. Opencode-inspired.",
   "license": "MIT",
   "author": "Sparsh Kaushik <github@sparshkaushik.com>",
