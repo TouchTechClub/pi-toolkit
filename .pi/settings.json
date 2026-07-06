@@ -4,21 +4,15 @@
     "../packages/oc-repo-research",
     "../packages/oc-todo",
     "../packages/oc-web-tools",
-    {
-      "source": "npm:@touchtechclub/pi-oc-repo-research",
-      "extensions": []
-    },
-    {
-      "source": "npm:@touchtechclub/pi-oc-web-tools",
-      "extensions": []
-    },
-    {
-      "source": "npm:@touchtechclub/pi-oc-rewind",
-      "extensions": []
-    },
-    {
-      "source": "npm:@touchtechclub/pi-oc-todo",
-      "extensions": []
+    { "source": "npm:@touchtechclub/pi-oc-repo-research", "extensions": [] },
+    { "source": "npm:@touchtechclub/pi-oc-web-tools", "extensions": [] },
+    { "source": "npm:@touchtechclub/pi-oc-rewind", "extensions": [] },
+    { "source": "npm:@touchtechclub/pi-oc-todo", "extensions": [] }
+  ],
+  "references": {
+    "pi": {
+      "repository": "earendil-works/pi",
+      "description": "Upstream pi coding-agent monorepo. The coding-agent package (extension API, tool registration, session manager, TUI types) lives at packages/coding-agent. Consult for ExtensionAPI, registerTool, ExtensionCommandContext, SessionEntry, and @earendil-works/pi-tui when this toolkit's packages depend on pi internals."
     }
-  ]
+  }
 }

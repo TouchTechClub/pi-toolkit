@@ -394,11 +394,7 @@ const WebFetchParams = Type.Object({
   ),
 })
 
-const WEBFETCH_DESCRIPTION = `- Fetches content from a specified URL
-- Takes a URL and optional format as input
-- Fetches the URL content, converts to requested format (markdown by default)
-- Returns the content in the specified format
-- Use this tool when you need to retrieve and analyze web content
+const WEBFETCH_DESCRIPTION = `Fetches a URL and returns its content converted to markdown (default), text, or HTML.
 
 Usage notes:
   - The URL must be a fully-formed valid URL starting with http:// or https://
@@ -428,17 +424,15 @@ const WebSearchParams = Type.Object({
   ),
 })
 
-const WEBSEARCH_DESCRIPTION = `- Search the web using a MCP-based web search provider — performs real-time web searches and can scrape content from specific URLs
+const WEBSEARCH_DESCRIPTION = `- Search the web using a web search provider — performs real-time web searches
 - Provides up-to-date information for current events and recent data
 - Supports configurable result counts and returns the content from the most relevant websites
 - Use this tool for accessing information beyond your knowledge cutoff
-- Searches are performed automatically within a single API call
 
 Usage notes:
   - Supports live crawling modes when available: 'fallback' (backup if cached unavailable) or 'preferred' (prioritize live crawling)
   - Search types when available: 'auto' (balanced), 'fast' (quick results), 'deep' (comprehensive search)
   - Configurable context length for optimal LLM integration
-  - Domain filtering and advanced search options available
   - Configure via EXA_API_KEY or PARALLEL_API_KEY environment variables
   - Override provider selection with OC_WEBSEARCH_PROVIDER=exa|parallel`
 

@@ -110,6 +110,207 @@ interface OverviewMetadata {
 }
 
 // ---------------------------------------------------------------------------
+// Reference config types (OpenCode References compatible)
+// ---------------------------------------------------------------------------
+
+export interface ReferenceConfig {
+  /** Local directory path (relative to config file, absolute, or ~). */
+  path?: string
+  /** Git URL, host/path, or GitHub owner/repo shorthand. */
+  repository?: string
+  /** Optional git branch or ref. */
+  branch?: string
+  /** Guidance describing when the agent should use this reference. */
+  description?: string
+  /** Hide from @ autocomplete in TUI. */
+  hidden?: boolean
+}
+
+export interface ResolvedReference {
+  alias: string
+  config: ReferenceConfig
+  /** Absolute path on disk (either resolved local path or repo cache path). */
+  resolvedPath: string
+  /** Source type for display. */
+  source: 'local' | 'git'
+}
+
+/**
+ * Validates a reference alias: no empty, no /, no backticks, no commas,
+ * no whitespace.
+ */
+export function validateReferenceAlias(alias: string): void {
+  if (!alias || alias.includes('/') || /[\s,`]/.test(alias)) {
+    throw new Error(
+      'Reference aliases cannot be empty or contain /, whitespace, backticks, or commas',
+    )
+  }
+}
+
+/**
+ * Load and parse a JSON settings file. Returns null on any failure.
+ */
+async function loadSettingsFile(filePath: string): Promise<Record<string, unknown> | null> {
+  try {
+    const content = await readFile(filePath, 'utf-8')
+    return JSON.parse(content) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Load references from global and project settings.
+ * Project settings override global settings for matching aliases.
+ */
+async function loadReferencesConfig(cwd: string): Promise<Record<string, ReferenceConfig>> {
+  const globalSettingsPath = path.join(homedir(), '.pi', 'agent', 'settings.json')
+  const projectSettingsPath = path.join(cwd, '.pi', 'settings.json')
+
+  const [globalSettings, projectSettings] = await Promise.all([
+    loadSettingsFile(globalSettingsPath),
+    loadSettingsFile(projectSettingsPath),
+  ])
+
+  const globalRefs = (globalSettings?.references as Record<string, ReferenceConfig | string>) ?? {}
+  const projectRefs =
+    (projectSettings?.references as Record<string, ReferenceConfig | string>) ?? {}
+
+  // Merge, with project overriding global
+  const merged: Record<string, ReferenceConfig> = {}
+
+  for (const [alias, value] of Object.entries(globalRefs)) {
+    merged[alias] = normalizeReferenceConfig(value)
+  }
+
+  for (const [alias, value] of Object.entries(projectRefs)) {
+    merged[alias] = normalizeReferenceConfig(value)
+  }
+
+  return merged
+}
+
+/**
+ * Normalize a reference config value (object or string shorthand).
+ * String shorthand:
+ *   - "../docs" → { path: "../docs" }
+ *   - "owner/repo" → { repository: "owner/repo" }
+ */
+export function normalizeReferenceConfig(value: ReferenceConfig | string): ReferenceConfig {
+  if (typeof value === 'string') {
+    // Heuristic: if it looks like a local path (starts with ./ ../ ~ /),
+    // treat it as a path. Otherwise treat as a repository.
+    if (
+      value.startsWith('./') ||
+      value.startsWith('../') ||
+      value.startsWith('~') ||
+      value.startsWith('/')
+    ) {
+      return { path: value }
+    }
+    // Otherwise treat as a repository reference (git URL, host/path, or owner/repo)
+    return { repository: value }
+  }
+  return value
+}
+
+/**
+ * Resolve a local directory reference to an absolute path.
+ * Paths are resolved relative to the config file that defines them.
+ */
+function resolveLocalRefPath(refPath: string, cwd: string): string {
+  if (refPath.startsWith('~')) {
+    return path.join(homedir(), refPath.slice(1))
+  }
+  if (path.isAbsolute(refPath)) {
+    return refPath
+  }
+  return path.resolve(cwd, refPath)
+}
+
+/**
+ * Resolve all references to absolute paths. For git references, the resolved
+ * path is the cache directory (may not exist yet if not cloned).
+ *
+ * Entries with neither `path` nor `repository` set are skipped and pushed to
+ * the `warnings` out-param so the caller can surface the misconfiguration
+ * instead of silently ignoring it.
+ */
+function resolveReferencePaths(
+  refs: Record<string, ReferenceConfig>,
+  cwd: string,
+  warnings: string[] = [],
+): Record<string, ResolvedReference> {
+  const resolved: Record<string, ResolvedReference> = {}
+
+  for (const [alias, config] of Object.entries(refs)) {
+    validateReferenceAlias(alias)
+
+    if (config.path) {
+      resolved[alias] = {
+        alias,
+        config,
+        resolvedPath: resolveLocalRefPath(config.path, cwd),
+        source: 'local',
+      }
+    } else if (config.repository) {
+      const ref = parseRepositoryReference(config.repository)
+      if (!ref) {
+        throw new Error(
+          `Invalid repository reference for "${alias}": ${config.repository}. ` +
+            'Must be a git URL, host/path reference, or GitHub owner/repo shorthand.',
+        )
+      }
+      if (config.branch) validateBranch(config.branch)
+      resolved[alias] = {
+        alias,
+        config,
+        resolvedPath: repositoryCachePath(ref),
+        source: 'git',
+      }
+    } else {
+      warnings.push(
+        `Reference "${alias}" has neither "path" nor "repository" set; skipping. ` +
+          'Set one in .pi/settings.json (or ~/.pi/agent/settings.json).',
+      )
+    }
+  }
+
+  return resolved
+}
+
+/**
+ * Build the context string injected into the system prompt for references
+ * that have descriptions.
+ */
+export function buildReferencesContext(resolved: Record<string, ResolvedReference>): string {
+  const described = Object.values(resolved).filter((r) => r.config.description)
+  if (described.length === 0) return ''
+
+  const lines: string[] = [
+    '[PROJECT REFERENCES]',
+    'The following references are configured and available via the @ alias in file paths:',
+    '',
+  ]
+
+  for (const r of described) {
+    const type =
+      r.source === 'git'
+        ? `git: ${r.config.repository}${r.config.branch ? ` (branch: ${r.config.branch})` : ''}`
+        : `local: ${r.config.path}`
+    lines.push(`- @${r.alias} (${type}): ${r.config.description}`)
+  }
+
+  lines.push(
+    '',
+    'Use read, glob, grep, or other file tools with these paths to inspect reference content.',
+    'Git references are materialized in ~/.pi/agent/repos/ and refreshed automatically.',
+  )
+
+  return lines.join('\n')
+}
+
+// ---------------------------------------------------------------------------
 // Git execution helper
 // ---------------------------------------------------------------------------
 
@@ -675,7 +876,13 @@ Supported repository reference formats:
   - GitHub shorthand: "owner/repo" (e.g., "facebook/react")
   - github: prefix: "github:owner/repo"
   - HTTPS URLs: "https://github.com/owner/repo.git"
-  - SSH/SCP-style: "git@github.com:owner/repo.git"`
+  - SSH/SCP-style: "git@github.com:owner/repo.git"
+
+Do NOT use this tool to:
+  - Fetch release descriptions or changelogs.
+  - Grab just one or two files from a huge repository.
+A full clone is wasteful for these. If the gh CLI is available, prefer it instead
+(gh release view, gh api, gh repo download) to fetch only what you need.`
 
 const REPO_OVERVIEW_DESCRIPTION = `Inspects the structure of a cached or local repository directory.
 Use this after repo_clone to get a high-level understanding of a repository's layout.
@@ -692,6 +899,95 @@ Specify "repository" to inspect a previously cloned repo, or "path" to inspect a
 Either "repository" or "path" must be provided.`
 
 export default function repoResearch(pi: ExtensionAPI) {
+  // In-memory reference state, reconstructed on session start
+  let resolvedRefs: Record<string, ResolvedReference> = {}
+
+  // -----------------------------------------------------------------------
+  // Reference lifecycle
+  // -----------------------------------------------------------------------
+
+  pi.on('session_start', async (_event, ctx) => {
+    try {
+      const config = await loadReferencesConfig(ctx.cwd)
+      const refWarnings: string[] = []
+      resolvedRefs = resolveReferencePaths(config, ctx.cwd, refWarnings)
+      if (ctx.hasUI) {
+        for (const warning of refWarnings) ctx.ui.notify(warning, 'warning')
+      }
+
+      // Auto-clone / refresh git references in the background
+      for (const resolved of Object.values(resolvedRefs)) {
+        if (resolved.source !== 'git') continue
+        try {
+          const ref = parseRepositoryReference(resolved.config.repository!)
+          if (!ref) continue
+          await cloneOrRefresh(ref, {
+            refresh: true,
+            branch: resolved.config.branch,
+          })
+        } catch {
+          // Reference clone/refresh failures are non-fatal; the agent can
+          // still call repo_clone explicitly later.
+        }
+      }
+
+      // Register @ autocomplete for reference aliases
+      if (ctx.hasUI) {
+        ctx.ui.addAutocompleteProvider((current) => ({
+          triggerCharacters: ['@'],
+          async getSuggestions(lines, cursorLine, cursorCol, options) {
+            const line = lines[cursorLine] ?? ''
+            const beforeCursor = line.slice(0, cursorCol)
+            const match = beforeCursor.match(/@([^\s]*)$/)
+            if (!match) {
+              return current.getSuggestions(lines, cursorLine, cursorCol, options)
+            }
+            const prefix = match[1] ?? ''
+
+            // Find non-hidden references matching the prefix
+            const matching = Object.entries(resolvedRefs).filter(
+              ([alias, r]) => !r.config.hidden && alias.startsWith(prefix),
+            )
+
+            if (matching.length === 0) {
+              // No reference matches — delegate to built-in file completion
+              return current.getSuggestions(lines, cursorLine, cursorCol, options)
+            }
+
+            return {
+              prefix: `@${prefix}`,
+              items: matching.map(([alias, r]) => ({
+                value: `@${alias}`,
+                label: `@${alias}`,
+                description:
+                  r.config.description ??
+                  (r.source === 'git' ? `git: ${r.config.repository}` : `local: ${r.config.path}`),
+              })),
+            }
+          },
+          applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+            return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix)
+          },
+          shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
+            return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true
+          },
+        }))
+      }
+    } catch {
+      // If config loading fails entirely, leave refs empty and continue.
+      resolvedRefs = {}
+    }
+  })
+
+  pi.on('before_agent_start', async (event, _ctx) => {
+    const context = buildReferencesContext(resolvedRefs)
+    if (!context) return
+
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n${context}`,
+    }
+  })
+
   // -----------------------------------------------------------------------
   // repo_clone tool
   // -----------------------------------------------------------------------

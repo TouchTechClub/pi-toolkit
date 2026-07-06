@@ -1,11 +1,13 @@
 # @touchtechclub/pi-oc-repo-research
 
-Opencode-inspired Pi extension providing git repository cloning and overview tools for agent research.
+Opencode-inspired Pi extension providing git repository cloning, overview tools, and configurable project references for agent research.
 
 ## Features
 
+- **Project references** — Configure local directories and git repos as named references in `.pi/settings.json`, with autocomplete and agent context injection
 - **`repo_clone`** — Clone any git repository into a managed local cache, with optional refresh and branch selection
 - **`repo_overview`** — Inspect a cached or local repository's structure, detect ecosystems, dependency files, and entrypoints
+- **`/repos`** — Manage the repository cache (list, delete)
 
 ## Install
 
@@ -31,6 +33,57 @@ pi extension add @touchtechclub/pi-oc-repo-research
 ```
 
 ## Configuration
+
+### References
+
+Define project references in `.pi/settings.json` (or `~/.pi/agent/settings.json` for global):
+
+```jsonc
+{
+  "references": {
+    "sdk": {
+      "repository": "anomalyco/opencode-sdk-js",
+      "branch": "main",
+      "description": "Use for JavaScript SDK implementation details"
+    },
+    "docs": {
+      "path": "../product-docs",
+      "description": "Use for product behavior and documentation conventions"
+    },
+    "internal": {
+      "path": "../internal",
+      "description": "Internal implementation details",
+      "hidden": true
+    }
+  }
+}
+```
+
+**String shorthand** (when you don't need branch or other options):
+
+```jsonc
+{
+  "references": {
+    "docs": "../docs",
+    "effect": "Effect-TS/effect"
+  }
+}
+```
+
+| Field | Local | Git | Description |
+|---|---|---|---|
+| `path` | Yes | No | Local reference directory (relative to config, absolute, or `~`) |
+| `repository` | No | Yes | Git URL, host/path, or GitHub `owner/repo` shorthand |
+| `branch` | No | Yes | Optional Git branch or ref |
+| `description` | Yes | Yes | Guidance describing when the agent should use the reference |
+| `hidden` | Yes | Yes | Hide the reference from `@` autocomplete in TUI |
+
+References are loaded on session start and:
+- **Git references** are auto-cloned/refreshed into `~/.pi/agent/repos/`
+- **References with descriptions** are injected into the agent's system prompt automatically
+- **`@alias` autocomplete** is available in the TUI for non-hidden references
+
+### Environment
 
 | Variable | Description | Default |
 |---|---|---|
