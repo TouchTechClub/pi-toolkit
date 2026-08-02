@@ -1,6 +1,6 @@
 {
   "name": "@touchtechclub/pi-oc-question",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi coding-agent extension: unified ask-the-user question tool with multi-select, opencode-inspired. Opencode-shaped, RPC-compatible.",
   "license": "MIT",
   "author": "Sparsh Kaushik <github@sparshkaushik.com>",

@@ -59,6 +59,10 @@ jobs:
         with:
           bun-version: "1.3.13"
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
       - name: Parse package info
         id: info
         run: |
@@ -80,17 +84,17 @@ jobs:
         run: bun run --cwd packages/acp test
 
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          # Trusted publishing (OIDC): the npm registry accepts publishes from
+          # this workflow via the trusted publisher configured on npmjs.com for
+          # @touchtechclub/pi-oc-question. No NPM_TOKEN is needed; npm's CLI
+          # auto-detects the GitHub Actions OIDC environment. Requires
+          # permissions.id-token: write (set above) and a GitHub-hosted runner.
           bun add -g npm@latest
           cd "${{ steps.info.outputs.dir }}"
           bun pm pack
           TARBALL=$(ls *.tgz | head -1)
-          # npm >= 12 no longer reads NODE_AUTH_TOKEN implicitly, and rejects
-          # `npm config set` inside a workspace root (ENOWORKSPACES). Write the
-          # registry auth token directly and publish from a neutral directory.
-          printf '//registry.npmjs.org/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" > ~/.npmrc
+          # Publish from a neutral directory to stay outside the monorepo root.
           PUBLISH_DIR="$(mktemp -d)"
           mv "$TARBALL" "$PUBLISH_DIR/"
           cd "$PUBLISH_DIR"
