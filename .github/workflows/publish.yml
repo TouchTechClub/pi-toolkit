@@ -80,11 +80,15 @@ jobs:
         run: bun run --cwd packages/acp test
 
       - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           bun add -g npm@latest
           cd "${{ steps.info.outputs.dir }}"
           bun pm pack
           TARBALL=$(ls *.tgz | head -1)
+          # npm >= 12 no longer reads NODE_AUTH_TOKEN implicitly; configure it explicitly.
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
           npm publish "$TARBALL" --access public --provenance
 
   release:
