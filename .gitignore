@@ -20,3 +20,5 @@ temp/
 /packages/oc-web-tools/AGENTS.md
 /packages/oc-web-tools/AGENTS.md.bak
 # END Ruler Generated Files
+
+*.tgz
