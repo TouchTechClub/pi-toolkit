@@ -87,8 +87,13 @@ jobs:
           cd "${{ steps.info.outputs.dir }}"
           bun pm pack
           TARBALL=$(ls *.tgz | head -1)
-          # npm >= 12 no longer reads NODE_AUTH_TOKEN implicitly; configure it explicitly.
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          # npm >= 12 no longer reads NODE_AUTH_TOKEN implicitly, and rejects
+          # `npm config set` inside a workspace root (ENOWORKSPACES). Write the
+          # registry auth token directly and publish from a neutral directory.
+          printf '//registry.npmjs.org/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" > ~/.npmrc
+          PUBLISH_DIR="$(mktemp -d)"
+          mv "$TARBALL" "$PUBLISH_DIR/"
+          cd "$PUBLISH_DIR"
           npm publish "$TARBALL" --access public --provenance
 
   release:
