@@ -7,9 +7,9 @@
   "scripts": {
     "build": "bun run --cwd packages/acp build",
     "typecheck": "bun run --cwd packages/acp typecheck",
-    "typecheck:all": "bun run --cwd packages/acp typecheck && bun run --cwd packages/oc-repo-research typecheck && bun run --cwd packages/oc-rewind typecheck && bun run --cwd packages/oc-todo typecheck && bun run --cwd packages/oc-web-tools typecheck",
+    "typecheck:all": "bun run --cwd packages/acp typecheck && bun run --cwd packages/oc-question typecheck && bun run --cwd packages/oc-repo-research typecheck && bun run --cwd packages/oc-rewind typecheck && bun run --cwd packages/oc-todo typecheck && bun run --cwd packages/oc-web-tools typecheck",
     "test": "bun run --cwd packages/acp test",
-    "test:all": "bun run --cwd packages/acp test && bun run --cwd packages/oc-repo-research test && bun run --cwd packages/oc-rewind test && bun run --cwd packages/oc-todo test && bun run --cwd packages/oc-web-tools test",
+    "test:all": "bun run --cwd packages/acp test && bun run --cwd packages/oc-question test && bun run --cwd packages/oc-repo-research test && bun run --cwd packages/oc-rewind test && bun run --cwd packages/oc-todo test && bun run --cwd packages/oc-web-tools test",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check .",

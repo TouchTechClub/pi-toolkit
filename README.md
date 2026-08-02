@@ -7,6 +7,7 @@ Monorepo for Pi coding agent tooling. Managed with [Bun](https://bun.sh) and [Bi
 | Package | Description |
 |---|---|
 | [`acp`](./packages/acp/README.md) | ACP adapter — bridges Pi sessions into Agent Client Protocol clients (Zed, etc.) |
+| [`oc-question`](./packages/oc-question/README.md) | Pi extension — unified ask-the-user question tool, opencode-shaped, RPC-compatible |
 | [`oc-repo-research`](./packages/oc-repo-research/README.md) | Pi extension — git repository cloning and overview tools for agent research |
 | [`oc-rewind`](./packages/oc-rewind/README.md) | Pi extension — per-message undo/redo with shadow-git snapshots |
 | [`oc-todo`](./packages/oc-todo/README.md) | Pi extension — structured todo list tracking, ACP plan-compatible |

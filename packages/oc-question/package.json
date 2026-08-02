@@ -1,0 +1,53 @@
+{
+  "name": "@touchtechclub/pi-oc-question",
+  "version": "0.1.0",
+  "description": "Pi coding-agent extension: unified ask-the-user question tool with multi-select, opencode-inspired. Opencode-shaped, RPC-compatible.",
+  "license": "MIT",
+  "author": "Sparsh Kaushik <github@sparshkaushik.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TouchTechClub/pi-toolkit.git",
+    "directory": "packages/oc-question"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/TouchTechClub/pi-toolkit/issues"
+  },
+  "homepage": "https://github.com/TouchTechClub/pi-toolkit/tree/main/packages/oc-question#readme",
+  "keywords": [
+    "pi-coding-agent",
+    "pi-package",
+    "pi-extension",
+    "opencode",
+    "question",
+    "ask",
+    "user-input",
+    "rpc"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.78.1",
+    "@earendil-works/pi-tui": "0.78.1",
+    "@types/bun": "^1.1.0",
+    "@types/node": "^22.0.0",
+    "typebox": "1.1.38",
+    "typescript": "^5.6.0"
+  }
+}
